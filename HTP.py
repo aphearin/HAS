@@ -2,56 +2,6 @@
 #April 7, 2014
 #Calculate the halo transiton probability function.
 
-def main():
-    import numpy as np
-    import h5py
-    import matplotlib.pyplot as plt
-    import custom_utilities as cu
-    import sys
-
-    group_cat = sys.argv[1]  # tinker_mocks, berlind_mocks, yang_mocks
-    catalogue = sys.argv[2]  # Mr19_age_distribution_matching_mock, Mr19_age_distribution_matching_mock_sys_empty_shuffle_satrel_shuffle
-
-    if group_cat == 'tinker_mocks':
-        filepath = cu.get_output_path() + 'processed_data/tinker_groupcat/mock_runs/4th_run/custom_catalogues/'
-        savepath = cu.get_output_path() + 'analysis/tinker_groupcat/'
-        plotpath = cu.get_plot_path() + 'analysis/tinker_groupcat/'
-        catalogue = catalogue + '_clf_groups_M19'
-    if group_cat == 'berlind_mocks':
-        filepath = cu.get_output_path() + 'processed_data/berlind_groupcat/mock_runs/4th_run/custom_catalogues/'
-        savepath = cu.get_output_path() + 'analysis/berlind_groupcat/'
-        plotpath = cu.get_plot_path() + 'analysis/berlind_groupcat/'
-        catalogue = catalogue + '_groups'
-    if group_cat == 'yang_mocks':
-        filepath = cu.get_output_path() + 'processed_data/yang_groupcat/mock_runs/4th_run/version_5/custom_catalogues/'
-        savepath = cu.get_output_path() + 'analysis/yang_groupcat/'
-        plotpath = cu.get_plot_path() + 'analysis/yang_groupcat/'
-        catalogue = catalogue + '_groups'
-
-    print 'opening group catalogue:', catalogue
-    #open catalogue
-    f  =  h5py.File(filepath+catalogue+'.hdf5', 'r') #open catalogue file
-    GC = f.get(catalogue)
-
-    #determine central/satellite designation
-    group_centrals   = np.where(GC['RANK']==1)[0]
-    group_satellites = np.where(GC['RANK']!=1)[0]
-    halo_centrals    = np.where(GC['HALO_RANK']==1)[0]
-    halo_satellites  = np.where(GC['HALO_RANK']!=1)[0]
-
-    #define group/halo mass bins
-    mass_bins = np.arange(11,15.2,0.2)
-    bin_width = mass_bins[1]-mass_bins[0]
-    bin_centers = (mass_bins[:-1]-mass_bins[1:])/2.0
-
-    #calculate the HTP
-    test()
-    H_cc, H_sc, H_ss, H_cs = htp(GC['MGROUP'], GC['HALO_M'], group_centrals, group_satellites, halo_centrals, halo_satellites, mass_bins) 
-
-    #plot the results
-    fig = plot_htp(H_cc, H_sc, H_ss, H_cs, mass_bins)
-    plt.show()
-
 def htp(inf_mass, halo_mass, inf_cen, inf_sat, halo_cen, halo_sat, mass_bins):
     #returns the halo transition probability given:
     #    inf_mass: inferred group mass containing the galaxy
@@ -198,6 +148,3 @@ def plot_htp(H_cc, H_sc, H_ss, H_cs, mass_bins):
     hist_2_ax.set_xticks([11,11.5,12,12.5,13,13.5,14,14.5,15.0])
 
     return fig 
-
-if __name__ == '__main__':
-    main()

@@ -1,51 +1,7 @@
-#!/usr/bin/env python
-
-#import modules
-import numpy as np
-import h5py
-import matplotlib
-import matplotlib.pyplot as plt
-import custom_utilities as cu
-from astropy import cosmology
-import sys
-
-def main():
-    group_cat = 'tinker'
-    catalogue = sys.argv[1]
-
-    bins = np.arange(9.5,10.8,0.1)
-    bin_centers = (bins[:-1]+bins[1:])/2.0
-
-    filepath_mock = cu.get_output_path() + 'processed_data/hearin_mocks/custom_catalogues/'
-    print 'opening mock catalogue:', catalogue+'.hdf5'
-    #open catalogue
-    f1 = h5py.File(filepath_mock+catalogue+'.hdf5', 'r') #open catalogue file
-    mock = f1.get(catalogue)
-    
-    centrals   = np.where(mock['ID_host']==-1)[0]
-    satellites = np.where(mock['ID_host']!=-1)[0]
-
-    #galaxy color
-    color = mock['g-r']
-    LHS   = 0.21-0.03*mock['M_r,0.1']
-    blue  = np.where(color<LHS)[0] #indices of blue galaxies
-    red   = np.where(color>LHS)[0] #indicies of red galaxies
-    
-    S_r  = 4.64 #solar constant
-    Lgal = solar_lum(mock['M_r,0.1'],S_r)
-
-    mask = np.zeros(len(mock))
-    mask[red]=1
-    f_sat_red = f_sat_L(Lgal,centrals,satellites,bins,mask) 
-    mask = np.zeros(len(mock))
-    mask[blue]=1
-    f_sat_blue = f_sat_L(Lgal,centrals,satellites,bins,mask)
-
-    plt.figure()
-    plt.plot(bin_centers,f_sat_red,color='red')
-    plt.plot(bin_centers,f_sat_blue,color='blue')
-    plt.ylim([0,1])
-    plt.show()
+#Duncan Campbell
+#Yale University
+#April 8, 2014
+#calculate the satellite fraction fo galaxies in a list as a function of galaxy luminosity
 
 def f_sat_L(Lgal,cen,sat,bins,mask):
     #returns the satellite fraction of galaxies in luminosity bins

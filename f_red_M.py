@@ -1,51 +1,8 @@
-#!/usr/bin/env python
+#Duncan Campbell
+#Yale University
+#April 8, 2014
+#calculate the red fraction of galaxies as a function of host mass
 
-#import modules
-import numpy as np
-import h5py
-import matplotlib
-import matplotlib.pyplot as plt
-import custom_utilities as cu
-from astropy import cosmology
-import sys
-
-def main():
-    group_cat = 'tinker'
-    catalogue = sys.argv[1]
-
-    bins = np.arange(11.0,15.0,0.2)
-    bin_centers = (bins[:-1]+bins[1:])/2.0
-
-    filepath_mock = cu.get_output_path() + 'processed_data/hearin_mocks/custom_catalogues/'
-    print 'opening mock catalogue:', catalogue+'.hdf5'
-    #open catalogue
-    f1 = h5py.File(filepath_mock+catalogue+'.hdf5', 'r') #open catalogue file
-    mock = f1.get(catalogue)
-    
-    centrals   = np.where(mock['ID_host']==-1)
-    satellites = np.where(mock['ID_host']!=-1)
-
-    #galaxy color
-    color = mock['g-r']
-    LHS   = 0.21-0.03*mock['M_r,0.1']
-    blue  = np.where(color<LHS)[0] #indices of blue galaxies
-    red   = np.where(color>LHS)[0] #indicies of red galaxies
-
-    mask = np.zeros(len(mock))
-    mask[centrals]=1
-    f_red_cen = f_red_M(mock['M_host'],red,blue,bins,mask) 
-    mask = np.zeros(len(mock))
-    mask[satellites]=1
-    f_red_sat = f_red_M(mock['M_host'],red,blue,bins,mask)
-
-    print f_red_cen
-    print f_red_sat
-
-    plt.figure()
-    plt.plot(bin_centers,f_red_cen,color='green')
-    plt.plot(bin_centers,f_red_sat,color='yellow')
-    plt.ylim([0,1])
-    plt.show()
 
 def f_red_M(Lgal,red,blue,bins,mask):
     #returns the red fraction of galaxies in luminosity bins
@@ -68,7 +25,3 @@ def f_red_M(Lgal,red,blue,bins,mask):
         else: f_red[i]=0.0
 
     return f_red
-    
-
-if __name__=='__main__':
-    main()
