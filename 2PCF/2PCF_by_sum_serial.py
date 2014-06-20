@@ -21,7 +21,7 @@ def main():
     
     DD = np.sum(x,axis=1)
     DD = np.sum(DD, axis=0)
-    DD = np.diff(DD)
+    #DD = np.diff(DD)
     
     print DD
     
