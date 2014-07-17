@@ -113,11 +113,9 @@ def proj_cross_npairs_serial(data_1,data_2,r_bins,cosmo):
     #find maximum theta
     X_min = comov(np.min(z))
     max_theta = np.max(r_bins)/(X_min/(1.0+np.min(z)))
-    print 'max_theta:', max_theta
     #find minimum theta
     X_max = comov(np.max(z))
     min_theta = np.min(r_bins)/(X_max/(1.0+np.max(z)))
-    print 'min_theta:', min_theta
     theta_bins = np.linspace(np.log10(min_theta), np.log10(max_theta), N_theta_bins)
     theta_bins = 10.0**theta_bins
     
@@ -128,6 +126,7 @@ def proj_cross_npairs_serial(data_1,data_2,r_bins,cosmo):
     pp = np.zeros(len(r_bins))
     
     #run a tree query for each theta bin
+    N1 = len(data_1)
     for i in range(0,len(theta_bins)):
         #calculate bins for angular separations
         pairs = np.array(KDT_1.query_ball_tree(KDT_2, c_bins[i]))
@@ -136,9 +135,11 @@ def proj_cross_npairs_serial(data_1,data_2,r_bins,cosmo):
         #calculate which r_proj bin each entry falls in
         k_ind = np.searchsorted(r_bins,r_proj)
         for j in range(0,N1):
-            pp[k_ind[j]] += len(pairs[j])
+            if k_ind[j]<len(pp):
+                pp[k_ind[j]] += len(pairs[j])
     
     pp = np.diff(pp)
+    print pp
 
     return pp
 
@@ -163,7 +164,7 @@ def _chord_to_cartesian(theta):
     
     #theta = radians(theta)
 
-    C = 2.0*sin(C/2.0)
+    C = 2.0*sin(theta/2.0)
     
     return C
 
