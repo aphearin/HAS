@@ -98,6 +98,7 @@ def proj_cross_npairs_serial(data_1,data_2,r_bins,cosmo):
     xyz_1[:,0],xyz_1[:,1],xyz_1[:,2] = _spherical_to_cartesian(data_1[:,0], data_1[:,1])
     xyz_2[:,0],xyz_2[:,1],xyz_2[:,2] = _spherical_to_cartesian(data_2[:,0], data_2[:,1])
     
+    #put data into a KD tree structure
     KDT_1 = cKDTree(xyz_1)
     KDT_2 = cKDTree(xyz_2)
     
@@ -141,15 +142,15 @@ def _spherical_to_cartesian(ra, dec):
         x,y,z: np.arrays cartesian coordinates 
     '''
     from numpy import radians, sin, cos
-
+    
     rar = radians(ra)
     decr = radians(dec)
-
+    
     x = cos(rar) * cos(decr)
     y = sin(rar) * cos(decr)
     z = sin(decr)
- 
-    return x, y, z              
+    
+    return x, y, z
 
 
 def _chord_to_cartesian(theta, radians=True):
@@ -164,7 +165,7 @@ def _chord_to_cartesian(theta, radians=True):
     '''
     from numpy import radians, sin
     if radians==False: theta = radians(theta)
-
+    
     C = 2.0*sin(theta/2.0)
     
     return C
@@ -204,7 +205,7 @@ def _proj_r_to_angular_bins(r_bins, z, N_sample, cosmo):
 #    from astropy.cosmology.funcs import comoving_distance
 #    from scipy import interpolate
 #    import numpy as np
-#
+#    
 #    z = np.linspace(0.0,1.0,1000)
 #    X = comoving_distance(z, cosmo=cosmo)
 #    
@@ -215,3 +216,4 @@ def _proj_r_to_angular_bins(r_bins, z, N_sample, cosmo):
 
 if __name__ == '__main__':
     main()
+    
