@@ -1,29 +1,22 @@
 #!/usr/bin/env python
 
 from __future__ import division
-import numpy as np
-import matplotlib.pyplot as plt
-import sys
-from mpi4py import MPI
-import time
-#from scipy.spatial import cKDTree
-from ckdtree import cKDTree
-
-#Takes two data sets: set_1 and set_2.
-# set_1 of length N1 must have ra,dec,z
-# set_2 of length N2 must ave ra,dec
-#returns the object pairs between set_1 and set_2
-# with physical separations given by r_bins
-# where to calculate the pair separation the redshift is used from the object in set_1
 
 def main():
-     
+    '''
+    Example code to calculate the projected 2PCF using proj_cross_npairs_serial().
+    '''
+    import sys
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
     #filename_1 = sys.argv[1]
     #filename_2 = sys.argv[2]
     #filename_3 = sys.argv[3]
     filename_1 = 'test/test_radec_1.dat'
     filename_2 = 'test/test_radec_2.dat'
     filename_3 = 'test/test_ran_radec_2.dat'
+    
     #read in data
     from astropy.io import ascii
     from astropy.table import Table
@@ -49,22 +42,24 @@ def main():
     from astropy.cosmology import FlatLambdaCDM
     cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
 
+    #count pairs
     DD = proj_cross_npairs_serial(data_1,data_2,r_bins,cosmo)
-    DR = proj_cross_npairs_serial(data_1,ran_2,r_bins,cosmo)
-    
     print DD
+    DR = proj_cross_npairs_serial(data_1,ran_2,r_bins,cosmo)
     print DR
     
     factorDD = len(data_1)/len(data_2)
     factorDR = len(data_2)/len(ran_2)
     
     cross_proj_corr = TPCF_estimator(DD,DR,factorDR)
-    
     print cross_proj_corr
     
     plt.figure()
     plt.plot(r_bin_centers,cross_proj_corr[:-1] + 1)
+    plt.xlabel('R Mpc')
+    plt.ylabel(r'$\xi+1$')
     plt.show()
+
 
 '''
 def TPCF_estimator(DD,RR,DR,factor):
@@ -73,6 +68,7 @@ def TPCF_estimator(DD,RR,DR,factor):
 
     return corr
 '''
+    
     
 def TPCF_estimator(DD,RR,factor):
     #estimate correlation function
@@ -91,6 +87,10 @@ def proj_cross_npairs_serial(data_1,data_2,r_bins,cosmo):
     returns
         N pairs in radial bins
     '''
+    from astropy.cosmology.funcs import comoving_distance
+    import numpy as np
+    #from scipy.spatial import cKDTree
+    from ckdtree import cKDTree #modified version of scipy.spatial.ckdtree code
     
     #create tree structures for angular pair calculation
     xyz_1 = np.empty((len(data_1),3))
@@ -104,52 +104,42 @@ def proj_cross_npairs_serial(data_1,data_2,r_bins,cosmo):
     #redshifts of sample 1
     z = data_1[:,2]
     #comoving distance to sample 1
-    #build redshift angular distance interpolation function
-    comov = build_comov_intrpd(cosmo)
-    X = comov(z)
+    X = comoving_distance(z, cosmo=cosmo).value
     
     #define angular bins given r_proj bins and redshift range
-    N_r_bins = len(r_bins)
-    N_theta_bins = 10.0 * N_r_bins
-    #find maximum theta
-    X_min = comov(np.min(z))
-    max_theta = np.max(r_bins)/(X_min/(1.0+np.min(z)))
-    #find minimum theta
-    X_max = comov(np.max(z))
-    min_theta = np.min(r_bins)/(X_max/(1.0+np.max(z)))
-    theta_bins = np.linspace(np.log10(min_theta), np.log10(max_theta), N_theta_bins)
-    theta_bins = 10.0**theta_bins
+    theta_bins = _proj_r_to_angular_bins(r_bins, z, 10, cosmo)
     
     #convert angular bins to cartesian distances
     c_bins = _chord_to_cartesian(theta_bins)
     
-    #create array to store number counts
-    pp = np.zeros(len(r_bins))
-    
     #run a tree query for each theta bin
+    pp = np.zeros(len(r_bins)) #pair count storage array
     N1 = len(data_1)
     prev_pairs = np.zeros(len(data_1))
     for i in range(0,len(theta_bins)):
         #calculate bins for angular separations
         pairs = np.array(KDT_1.query_ball_tree(KDT_2, c_bins[i]))
-        print np.min(pairs)
         #convert angular separation into projected physical separation
         r_proj = X/(1.0+z)*theta_bins[i]
-        #calculate which r_proj bin each entry falls in
+        #calculate which r_proj bin each theta_bin falls in
         k_ind = np.searchsorted(r_bins,r_proj)
         for j in range(0,N1):
             if k_ind[j]<len(pp):
                 pp[k_ind[j]] += pairs[j] - prev_pairs[j]
         prev_pairs = pairs
-    
-    #pp = np.diff(pp)
-    print pp
 
     return pp
 
 
 def _spherical_to_cartesian(ra, dec):
-
+    '''
+    Calculate cartesian coordinates on a unit sphere given two angular coordinates. 
+    parameters
+        ra: np.array of angular coordinate in degrees
+        dec: np.array of angular coordinate in degrees
+    returns
+        x,y,z: np.arrays cartesian coordinates 
+    '''
     from numpy import radians, sin, cos
 
     rar = radians(ra)
@@ -162,28 +152,65 @@ def _spherical_to_cartesian(ra, dec):
     return x, y, z              
 
 
-def _chord_to_cartesian(theta):
-    
+def _chord_to_cartesian(theta, radians=True):
+    '''
+    Calculate chord distance on a unit sphere given an angular distance between two 
+    points.
+    parameters
+        theta: np.array of angular distance
+        radians: input in radians.  Default is true  If False, input in degrees.
+    returns
+        C: np.array chord distance 
+    '''
     from numpy import radians, sin
-    
-    #theta = radians(theta)
+    if radians==False: theta = radians(theta)
 
     C = 2.0*sin(theta/2.0)
     
     return C
 
 
-def build_comov_intrpd(cosmo):
-    from astropy.cosmology.funcs import comoving_distance
-    from scipy import interpolate
+def _proj_r_to_angular_bins(r_bins, z, N_sample, cosmo):
+    '''
+    define angular bins given r_proj bins and redshift range.
+    parameters
+        r_bins: np.array, projected radial bins in Mpc
+        N_sample: int, oversample rate of theta bins
+        cosmo: astropy cosmology object defining cosmology
+    returns:
+        theta_bins: np.array, angular bins in radians
+    '''
     import numpy as np
+    from astropy.cosmology.funcs import comoving_distance
+    
+    N_r_bins = len(r_bins)
+    N_theta_bins = N_sample * N_r_bins
+    
+    #find maximum theta
+    X_min = comoving_distance(np.min(z),cosmo).value
+    max_theta = np.max(r_bins)/(X_min/(1.0+np.min(z)))
+    
+    #find minimum theta
+    X_max = comoving_distance(np.max(z),cosmo).value
+    min_theta = np.min(r_bins)/(X_max/(1.0+np.max(z)))
+    
+    theta_bins = np.linspace(np.log10(min_theta), np.log10(max_theta), N_theta_bins)
+    theta_bins = 10.0**theta_bins
+    
+    return theta_bins
 
-    z = np.linspace(0.0,1.0,1000)
-    X = comoving_distance(z, cosmo=cosmo)
-    
-    f = interpolate.interp1d(z, X, kind='linear') #need to look into speed of various options
-    
-    return f
+
+#def build_comov_intrpd(cosmo):
+#    from astropy.cosmology.funcs import comoving_distance
+#    from scipy import interpolate
+#    import numpy as np
+#
+#    z = np.linspace(0.0,1.0,1000)
+#    X = comoving_distance(z, cosmo=cosmo)
+#    
+#    f = interpolate.interp1d(z, X, kind='linear') #need to look into speed of various options
+#    
+#    return f
 
 
 if __name__ == '__main__':
