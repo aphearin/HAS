@@ -32,6 +32,9 @@ def main():
     N1 = len(data_1)
     N2 = len(data_2)
     N3 = len(ran_2)
+    print 'len(data_1):', N1
+    print 'len(data_2):', N2
+    print 'len(ran_2) :', N3
     
     #define radial bins
     r_bins = np.arange(-3,1,0.2) #Mpc
