@@ -11,8 +11,11 @@ def main():
     example:
     python TPCF_serial.py output.dat input1.dat input2.dat
     '''
+    
     import sys
     import numpy as np
+    from astropy.io import ascii
+    from astropy.table import Table
     
     print "running cross-correlation..."
     savename = sys.argv[1]

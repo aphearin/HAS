@@ -56,6 +56,7 @@ def angular_TPCF(data_1, data_2, bins):
     returns
     correlation function, bins
     '''
+    import numpy as np
     
     xyz_1 = np.empty((len(data_1),3))
     xyz_2 = np.empty((len(data_2),3))
