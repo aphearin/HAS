@@ -1,21 +1,27 @@
 #!/usr/bin/env python
 
-import numpy as np
-import matplotlib.pyplot as plt
-import sys
-from mpi4py import MPI
-import time
-from scipy.spatial import cKDTree
-from scipy.sparse import *
+#Duncan Campbell
+#Yale University
+#July 19, 2014
+#calculate all pairs and store in a large array wich can be used to calculate the TPCF by 
+#  sum.
+
 
 def main():
+    '''
+    example:
+    python pairs_serial.py output.dat input1.dat input2.dat
+    '''
+    import matplotlib.pyplot as plt
+    import sys
+    from astropy.io import ascii
+    from astropy.table import Table
     
     big_array = sys.argv[1]
     filename_1 = sys.argv[2]
     filename_2 = sys.argv[3]
+    
     #read in data
-    from astropy.io import ascii
-    from astropy.table import Table
     data_1 = ascii.read(filename_1)
     data_2 = ascii.read(filename_2) 
         
@@ -35,17 +41,22 @@ def main():
     
     filename = big_array
     
-    x = pairs_serial(data_1,data_2,filename)
-    
-    print bins[37]          
-    print x[:,:,37].nbytes  
-    print x[:,:,37].shape[0]*x[:,:,37].shape[1]
-    sx = csr_matrix(x[:,:,37])  
-    print sx.nnz
-    print sx.data.nbytes + sx.indptr.nbytes + sx.indices.nbytes  
-    
-def pairs_serial(data_1,data_2,filename):
+    x = pairs_serial(data_1, data_2, bins, filename)
 
+
+def pairs_serial(data_1,data_2,bins,filename):
+    '''
+    Create a N1 x N2 x N_bins array to to store all pairs.
+    parameters
+        data_1: (N1,k) array of points
+        data_2: (N2,k) array of points
+        filename: name of memmap file to store results
+    returns
+        x: N1xN2xn_bins memmap array containing all pairs of points
+    '''
+    import numpy as np
+    from scipy.spatial import cKDTree
+    
     x = np.memmap(filename, dtype='bool_', mode='r+', shape=(N1,N2,N3))
     
     KDT_1 = cKDTree(data_1)

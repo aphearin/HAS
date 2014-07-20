@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 
-# run as a script with
-# mpirun -np 4 pairs_mpi..py
+#Duncan Campbell
+#Yale University
+#July 19, 2014
+#calculate all pairs and store in a large array wich can be used to calculate the TPCF by 
+#  sum.  The large array should already exist.
 
 from mpi4py import MPI
 import numpy as np 
@@ -11,7 +14,11 @@ import time
 from scipy.spatial import cKDTree
 
 def main():
-
+    '''
+    example:
+    mpirun -np 4 python pairs_serial.py output.dat input1.dat input2.dat
+    '''
+    
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
     rank = comm.Get_rank()
@@ -50,21 +57,21 @@ def main():
     if comm.rank==0:
         chunks = np.array_split(inds,size)
         sendbuf = chunks
-        
+    
     inds=comm.scatter(sendbuf,root=0)
-    	
+    
     #create trees
     KDT_1 = cKDTree(data_1[inds])
     KDT_2 = cKDTree(data_2)
     
     #record pairs
     for i in range(0,len(bins)):
-    	pairs = np.array(KDT_1.query_ball_tree(KDT_2, bins[i]))
-    	for j in range(0,len(inds)):
-    		if len(pairs[j])>0:
-    			x[inds[j],pairs[j],i] = True
-    			if i>0:
-    				x[inds[j],:,i] = x[j,:,i] - x[j,:,i-1]
+        pairs = np.array(KDT_1.query_ball_tree(KDT_2, bins[i]))
+        for j in range(0,len(inds)):
+            if len(pairs[j])>0:
+                x[inds[j],pairs[j],i] = True
+                if i>0:
+                    x[inds[j],:,i] = x[j,:,i] - x[j,:,i-1]
     
     result='done'
     
@@ -75,3 +82,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
