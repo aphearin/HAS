@@ -1,7 +1,11 @@
 #!/usr/bin/env python
 
-# run as a script with
-# mpirun -np 4 helloworld.py
+#Duncan Campbell
+#Yale University
+#July 21, 2014
+#This take an array N1 x N2 x N_bins comprised of 0's and 1's that indicates whether data
+#  are pairs in the bin.  This routine does summations along the array axis to determine
+#  the two point correlation function
 
 from mpi4py import MPI
 import numpy as np 
