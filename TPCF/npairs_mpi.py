@@ -52,7 +52,7 @@ def main():
     
     #define the indices
     inds1 = np.arange(0,N1)
-    inds2 = np.arange(0,N1)
+    inds2 = np.arange(0,N2)
     
     #split up indices for each subprocess
     sendbuf_1=[] #need these as place holders till each process get its list
