@@ -3,8 +3,7 @@
 #Duncan Campbell
 #Yale University
 #July 19, 2014
-#calculate all pairs and store in a large array wich can be used to calculate the TPCF by 
-#  sum.  The large array should already exist.
+#calculate all pairs and store the numbers in bins
 
 from mpi4py import MPI
 import numpy as np 
