@@ -72,14 +72,27 @@ def TPCF(data_1, data_2, bins):
 
 
 def TPCF_estimator(DD,RR,DR,factor):
-    #estimate correlation function
+    '''
+    Landy-Szalay estimater for the correlation function
+    '''
     corr = (factor ** 2.0 * DD - 2.0 * factor * DR + RR) / RR
     
     return corr
     
     
 def npairs(data_1, data_2, bins):
-    #count pairs with separations given by bins
+    '''
+    Count pairs with separations given by bins.
+    parameters
+        data_1: N,k array or list of points
+        data_2: N,k array or list of points
+        bins: array or list of continuos bins edges
+    returns:
+        DD_11: data_1-data_1 pairs (auto correlation)
+        DD_22: data_1-data_2 pairs (auto correlation)
+        DD_12: data_2-data_2 pairs (cross-correlation)
+        bins
+    '''
     import numpy as np
     from scipy.spatial import cKDTree
     
