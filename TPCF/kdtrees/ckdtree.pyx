@@ -2,11 +2,13 @@
 # Additional contributions by Patrick Varilly and Sturla Molden
 # Released under the scipy license
 
-#modified by duncan campbell 
-#July 17, 2014
-#Yale University
-#modified __query_ball_tree to return total number of pairs per query instead of indices
+# Periodic boundary conditions implemented by Stephen Skory 2011
+# yt-project
+# https://bitbucket.org/yt_analysis/yt
 
+# Modified by Duncan Campbell
+# Yale University
+# july 22, 2014
 
 import numpy as np
 import scipy.sparse
@@ -204,6 +206,12 @@ cdef inline np.float64_t dabs(np.float64_t x):
     else:
         return -x
         
+cdef inline np.float64_t dmin(np.float64_t x, np.float64_t y):
+    if x<y:
+        return x
+    else:
+        return y
+        
 # Utility for building a coo matrix incrementally
 cdef class coo_entries:
     cdef:
@@ -291,6 +299,46 @@ cdef inline np.float64_t _distance_p(np.float64_t *x, np.float64_t *y,
     return r
 
 
+cdef inline np.float64_t _distance_p_periodic(np.float64_t *x, np.float64_t *y,
+                                     np.float64_t p, np.intp_t k,
+                                     np.float64_t upperbound,
+                                     np.float64_t *period):
+    """Compute the distance between x and y
+    Computes the Minkowski p-distance to the power p between two points.
+    If the distance**p is larger than upperbound, then any number larger
+    than upperbound may be returned (the calculation is truncated).
+    """
+    
+    cdef int i
+    cdef np.float64_t r, m
+    r = 0
+    if p==infinity:
+        for i in range(k):
+            m = dmin(dabs(x[i] - y[i]), period[i] - dabs(x[i] - y[i]))
+            r = dmax(r,m)
+            if r>upperbound:
+                return r
+    elif p==1:
+        for i in range(k):
+            m = dmin(dabs(x[i] - y[i]), period[i] - dabs(x[i] - y[i]))
+            r += m
+            if r>upperbound:
+                return r
+    elif p==2:
+        for i in range(k):
+            m = dmin(dabs(x[i] - y[i]), period[i] - dabs(x[i] - y[i]))
+            r += m*m
+            if r>upperbound:
+                return r
+    else:
+        for i in range(k):
+            m = dmin(dabs(x[i] - y[i]), period[i] - dabs(x[i] - y[i]))
+            r += m**p
+            if r>upperbound:
+                return r
+    return r
+
+
 # Interval arithmetic
 # ===================
 
@@ -319,6 +367,20 @@ cdef inline np.float64_t min_dist_point_interval_p(np.float64_t* x,
     """
     return dmax(0, dmax(rect.mins[k] - x[k], x[k] - rect.maxes[k])) ** p
 
+cdef inline np.float64_t min_dist_point_interval_p_periodic(np.float64_t* x,
+                                                   Rectangle rect,
+                                                   np.intp_t k,
+                                                   np.float64_t p,
+                                                   np.float64_t *period):
+    """Compute the minimum distance along dimension k between x and
+    a point in the hyperrectangle.
+    """
+    d_left = dmin(dabs(rect.mins[k] - x[k]), period[k] - dabs(rect.mins[k] - x[k]))
+    d_right = dmin(dabs(rect.maxes[k] - x[k]), period[k] - dabs(rect.maxes[k] - x[k]))
+    result = dmin(d_left,d_right)
+    if dmax(0, dmax(rect.mins[k] - x[k], x[k] - rect.maxes[k])) == 0: return 0
+    else: return result ** p
+
 cdef inline np.float64_t max_dist_point_interval_p(np.float64_t* x,
                                                    Rectangle rect,
                                                    np.intp_t k,
@@ -327,6 +389,21 @@ cdef inline np.float64_t max_dist_point_interval_p(np.float64_t* x,
     a point in the hyperrectangle.
     """
     return dmax(rect.maxes[k] - x[k], x[k] - rect.mins[k]) ** p
+
+cdef inline np.float64_t max_dist_point_interval_p_periodic(np.float64_t* x,
+                                                   Rectangle rect,
+                                                   np.intp_t k,
+                                                   np.float64_t p,
+                                                   np.float64_t *period):
+    """Compute the maximum distance along dimension k between x and
+    a point in the hyperrectangle.
+    """
+    d_left = dmin(dabs(rect.mins[k] - x[k]), period[k] - dabs(rect.mins[k] - x[k]))
+    d_right = dmin(dabs(rect.maxes[k] - x[k]), period[k] - dabs(rect.maxes[k] - x[k]))
+    result = dmax(d_left,d_right)
+    delta_1 = rect.maxes[k]-rect.mins[k]
+    if delta_1 >= period[k]/2.0: return (period[k]/2.0) ** 2.0
+    else: return result  ** p
 
 cdef inline np.float64_t min_dist_interval_interval_p(Rectangle rect1,
                                                       Rectangle rect2,
@@ -338,6 +415,20 @@ cdef inline np.float64_t min_dist_interval_interval_p(Rectangle rect1,
     return dmax(0, dmax(rect1.mins[k] - rect2.maxes[k],
                         rect2.mins[k] - rect1.maxes[k])) ** p
 
+cdef inline np.float64_t min_dist_interval_interval_p_periodic(Rectangle rect1,
+                                                      Rectangle rect2,
+                                                      np.intp_t k,
+                                                      np.float64_t p,
+                                                      np.float64_t *period):
+    """Compute the minimum distance along dimension k between points in
+    two hyperrectangles.
+    """
+    d_lr = dmin(dabs(rect1.mins[k] - rect2.maxes[k]), period[k] - dabs(rect1.mins[k] - rect2.maxes[k]))
+    d_rl = dmin(dabs(rect1.maxes[k] - rect2.mins[k]), period[k] - dabs(rect1.maxes[k] - rect2.mins[k]))
+    if dmax(0, dmax(rect1.mins[k] - rect2.maxes[k], rect2.mins[k] - rect1.maxes[k])) == 0: return 0
+    else: return dmin(d_lr, d_rl)
+    
+
 cdef inline np.float64_t max_dist_interval_interval_p(Rectangle rect1,
                                                       Rectangle rect2,
                                                       np.intp_t k,
@@ -346,6 +437,27 @@ cdef inline np.float64_t max_dist_interval_interval_p(Rectangle rect1,
     two hyperrectangles.
     """
     return dmax(rect1.maxes[k] - rect2.mins[k], rect2.maxes[k] - rect1.mins[k]) ** p
+
+cdef inline np.float64_t max_dist_interval_interval_p_periodic(Rectangle rect1,
+                                                      Rectangle rect2,
+                                                      np.intp_t k,
+                                                      np.float64_t p,
+                                                      np.float64_t *period):
+    """Compute the maximum distance along dimension k between points in
+    two hyperrectangles.
+    """
+    d_lr = dmin(dabs(rect1.mins[k] - rect2.maxes[k]), period[k] - dabs(rect1.mins[k] - rect2.maxes[k]))
+    d_rl = dmin(dabs(rect1.maxes[k] - rect2.mins[k]), period[k] - dabs(rect1.maxes[k] - rect2.mins[k]))
+    d_rr = dmin(dabs(rect1.maxes[k] - rect2.maxes[k]), period[k] - dabs(rect1.maxes[k] - rect2.maxes[k]))
+    d_ll = dmin(dabs(rect1.mins[k] - rect2.mins[k]), period[k] - dabs(rect1.mins[k] - rect2.mins[k]))
+    delta_1 = rect1.maxes[k]-rect1.mins[k]
+    delta_2 = rect2.maxes[k]-rect2.mins[k]
+    if (delta_1+delta_2) >= (period[k]/2.0): return (period[k]/2.0) ** p
+    else: return dmax(d_lr,dmax(d_rl,dmax(d_rr,d_ll)))
+
+
+#note: I have not modified these to work with periodic boundary conditions despite the names!
+#I don't think ill be using a p=inf metric anytime soon...
 
 # Interval arithmetic in m-D
 # ==========================
@@ -360,8 +472,28 @@ cdef inline np.float64_t min_dist_point_rect_p_inf(np.float64_t* x,
         min_dist = dmax(min_dist, dmax(rect.mins[i]-x[i], x[i]-rect.maxes[i]))
     return min_dist
 
+cdef inline np.float64_t min_dist_point_rect_p_inf_periodic(np.float64_t* x,
+                                                   Rectangle rect,
+                                                   np.float64_t *period):
+    """Compute the minimum distance between x and the given hyperrectangle."""
+    cdef np.intp_t i
+    cdef np.float64_t min_dist = 0.
+    for i in range(rect.m):
+        min_dist = dmax(min_dist, dmax(rect.mins[i]-x[i], x[i]-rect.maxes[i]))
+    return min_dist
+
 cdef inline np.float64_t max_dist_point_rect_p_inf(np.float64_t* x,
                                                    Rectangle rect):
+    """Compute the maximum distance between x and the given hyperrectangle."""
+    cdef np.intp_t i
+    cdef np.float64_t max_dist = 0.
+    for i in range(rect.m):
+        max_dist = dmax(max_dist, dmax(rect.maxes[i]-x[i], x[i]-rect.mins[i]))
+    return max_dist
+
+cdef inline np.float64_t max_dist_point_rect_p_inf_periodic(np.float64_t* x,
+                                                            Rectangle rect,
+                                                            np.float64_t *period):
     """Compute the maximum distance between x and the given hyperrectangle."""
     cdef np.intp_t i
     cdef np.float64_t max_dist = 0.
@@ -379,6 +511,17 @@ cdef inline np.float64_t min_dist_rect_rect_p_inf(Rectangle rect1,
                                        rect2.mins[i] - rect1.maxes[i]))
     return min_dist
 
+cdef inline np.float64_t min_dist_rect_rect_p_inf_periodic(Rectangle rect1,
+                                                           Rectangle rect2,
+                                                           np.float64_t *period):
+    """Compute the minimum distance between points in two hyperrectangles."""
+    cdef np.intp_t i
+    cdef np.float64_t min_dist = 0.
+    for i in range(rect1.m):
+        min_dist = dmax(min_dist, dmax(rect1.mins[i] - rect2.maxes[i],
+                                       rect2.mins[i] - rect1.maxes[i]))
+    return min_dist
+
 cdef inline np.float64_t max_dist_rect_rect_p_inf(Rectangle rect1,
                                                   Rectangle rect2):
     """Compute the maximum distance between points in two hyperrectangles."""
@@ -388,6 +531,18 @@ cdef inline np.float64_t max_dist_rect_rect_p_inf(Rectangle rect1,
         max_dist = dmax(max_dist, dmax(rect1.maxes[i] - rect2.mins[i],
                                        rect2.maxes[i] - rect1.mins[i]))
     return max_dist
+
+cdef inline np.float64_t max_dist_rect_rect_p_inf_periodic(Rectangle rect1,
+                                                           Rectangle rect2,
+                                                           np.float64_t *period):
+    """Compute the maximum distance between points in two hyperrectangles."""
+    cdef np.intp_t i
+    cdef np.float64_t max_dist = 0.
+    for i in range(rect1.m):
+        max_dist = dmax(max_dist, dmax(rect1.maxes[i] - rect2.mins[i],
+                                       rect2.maxes[i] - rect1.mins[i]))
+    return max_dist
+
 
 # Rectangle-to-rectangle distance tracker
 # =======================================
@@ -462,7 +617,16 @@ cdef class RectRectDistanceTracker(object):
     
 
     def __init__(self, Rectangle rect1, Rectangle rect2,
-                 np.float64_t p, np.float64_t eps, np.float64_t upper_bound):
+                 np.float64_t p, np.float64_t eps, np.float64_t upper_bound,
+                 object period=None):
+                 
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        if period is None:
+            period = np.array([np.inf]*self.m)
+        else:
+            period = np.asarray(period).astype("float64")
+        cperiod = np.ascontiguousarray(period)
+        self.cperiod = cperiod
         
         if rect1.m != rect2.m:
             raise ValueError("rect1 and rect2 have different dimensions")
@@ -495,8 +659,10 @@ cdef class RectRectDistanceTracker(object):
             self.min_distance = 0.
             self.max_distance = 0.
             for i in range(rect1.m):
-                self.min_distance += min_dist_interval_interval_p(rect1, rect2, i, p)
-                self.max_distance += max_dist_interval_interval_p(rect1, rect2, i, p)
+                #self.min_distance += min_dist_interval_interval_p(rect1, rect2, i, p)
+                #self.max_distance += max_dist_interval_interval_p(rect1, rect2, i, p)
+                self.min_distance += min_dist_interval_interval_p_periodic(rect1, rect2, i, p, <np.float64_t*>cperiod.data)
+                self.max_distance += max_dist_interval_interval_p_periodic(rect1, rect2, i, p, <np.float64_t*>cperiod.data)
 
     def __dealloc__(self):
         self._free_stack()
@@ -510,6 +676,9 @@ cdef class RectRectDistanceTracker(object):
             rect = self.rect1
         else:
             rect = self.rect2
+            
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        cperiod = self.cperiod
 
         # Push onto stack
         if self.stack_size == self.stack_max_size:
@@ -526,8 +695,10 @@ cdef class RectRectDistanceTracker(object):
 
         # Update min/max distances
         if self.p != infinity:
-            self.min_distance -= min_dist_interval_interval_p(self.rect1, self.rect2, split_dim, self.p)
-            self.max_distance -= max_dist_interval_interval_p(self.rect1, self.rect2, split_dim, self.p)
+            #self.min_distance -= min_dist_interval_interval_p(self.rect1, self.rect2, split_dim, self.p)
+            #self.max_distance -= max_dist_interval_interval_p(self.rect1, self.rect2, split_dim, self.p)
+            self.min_distance -= min_dist_interval_interval_p_periodic(self.rect1, self.rect2, split_dim, self.p, <np.float64_t*>cperiod.data)
+            self.max_distance -= max_dist_interval_interval_p_periodic(self.rect1, self.rect2, split_dim, self.p, <np.float64_t*>cperiod.data)
 
         if direction == LESS:
             rect.maxes[split_dim] = split_val
@@ -535,8 +706,10 @@ cdef class RectRectDistanceTracker(object):
             rect.mins[split_dim] = split_val
 
         if self.p != infinity:
-            self.min_distance += min_dist_interval_interval_p(self.rect1, self.rect2, split_dim, self.p)
-            self.max_distance += max_dist_interval_interval_p(self.rect1, self.rect2, split_dim, self.p)
+            #self.min_distance += min_dist_interval_interval_p(self.rect1, self.rect2, split_dim, self.p)
+            #self.max_distance += max_dist_interval_interval_p(self.rect1, self.rect2, split_dim, self.p)
+            self.min_distance += min_dist_interval_interval_p_periodic(self.rect1, self.rect2, split_dim, self.p, <np.float64_t*>cperiod.data)
+            self.max_distance += max_dist_interval_interval_p_periodic(self.rect1, self.rect2, split_dim, self.p, <np.float64_t*>cperiod.data)
         else:
             self.min_distance = min_dist_rect_rect_p_inf(self.rect1, self.rect2)
             self.max_distance = max_dist_rect_rect_p_inf(self.rect1, self.rect2)
@@ -641,7 +814,16 @@ cdef class PointRectDistanceTracker(object):
         return 0
 
     cdef init(self, np.float64_t *pt, Rectangle rect,
-              np.float64_t p, np.float64_t eps, np.float64_t upper_bound):
+              np.float64_t p, np.float64_t eps, np.float64_t upper_bound,
+              object period=None):
+        
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        if period is None:
+            period = np.array([np.inf]*self.m)
+        else:
+            period = np.asarray(period).astype("float64")
+        cperiod = np.ascontiguousarray(period)
+        self.cperiod=cperiod
 
         self.pt = pt
         self.rect = rect
@@ -671,8 +853,10 @@ cdef class PointRectDistanceTracker(object):
             self.min_distance = 0.
             self.max_distance = 0.
             for i in range(rect.m):
-                self.min_distance += min_dist_point_interval_p(pt, rect, i, p)
-                self.max_distance += max_dist_point_interval_p(pt, rect, i, p)
+                #self.min_distance += min_dist_point_interval_p(pt, rect, i, p)
+                #self.max_distance += max_dist_point_interval_p(pt, rect, i, p)
+                self.min_distance += min_dist_point_interval_p_periodic(pt, rect, i, p, <np.float64_t*>cperiod.data)
+                self.max_distance += max_dist_point_interval_p_periodic(pt, rect, i, p, <np.float64_t*>cperiod.data)
 
     def __dealloc__(self):
         self._free_stack()
@@ -681,6 +865,9 @@ cdef class PointRectDistanceTracker(object):
                   np.intp_t split_dim,
                   np.float64_t split_val) except -1:
 
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        cperiod = self.cperiod
+        
         # Push onto stack
         if self.stack_size == self.stack_max_size:
             self._resize_stack(self.stack_max_size * 2)
@@ -695,8 +882,10 @@ cdef class PointRectDistanceTracker(object):
         item.max_along_dim = self.rect.maxes[split_dim]
             
         if self.p != infinity:
-            self.min_distance -= min_dist_point_interval_p(self.pt, self.rect, split_dim, self.p)
-            self.max_distance -= max_dist_point_interval_p(self.pt, self.rect, split_dim, self.p)
+            #self.min_distance -= min_dist_point_interval_p(self.pt, self.rect, split_dim, self.p)
+            #self.max_distance -= max_dist_point_interval_p(self.pt, self.rect, split_dim, self.p)
+            self.min_distance -= min_dist_point_interval_p_periodic(self.pt, self.rect, split_dim, self.p, <np.float64_t*>cperiod.data)
+            self.max_distance -= max_dist_point_interval_p_periodic(self.pt, self.rect, split_dim, self.p, <np.float64_t*>cperiod.data)
 
         if direction == LESS:
             self.rect.maxes[split_dim] = split_val
@@ -704,8 +893,10 @@ cdef class PointRectDistanceTracker(object):
             self.rect.mins[split_dim] = split_val
 
         if self.p != infinity:
-            self.min_distance += min_dist_point_interval_p(self.pt, self.rect, split_dim, self.p)
-            self.max_distance += max_dist_point_interval_p(self.pt, self.rect, split_dim, self.p)
+            #self.min_distance += min_dist_point_interval_p(self.pt, self.rect, split_dim, self.p)
+            #self.max_distance += max_dist_point_interval_p(self.pt, self.rect, split_dim, self.p)
+            self.min_distance += min_dist_point_interval_p_periodic(self.pt, self.rect, split_dim, self.p, <np.float64_t*>cperiod.data)
+            self.max_distance += max_dist_point_interval_p_periodic(self.pt, self.rect, split_dim, self.p, <np.float64_t*>cperiod.data)
         else:
             self.min_distance = min_dist_point_rect_p_inf(self.pt, self.rect)
             self.max_distance = max_dist_point_rect_p_inf(self.pt, self.rect)
@@ -738,6 +929,8 @@ cdef class PointRectDistanceTracker(object):
 cdef struct innernode:
     np.intp_t split_dim
     np.intp_t children
+    np.float64_t* maxes
+    np.float64_t* mins
     np.float64_t split
     innernode* less
     innernode* greater
@@ -745,9 +938,10 @@ cdef struct innernode:
 cdef struct leafnode:
     np.intp_t split_dim
     np.intp_t children
+    np.float64_t* maxes
+    np.float64_t* mins
     np.intp_t start_idx
     np.intp_t end_idx
-
 
 # this is the standard trick for variable-size arrays:
 # malloc sizeof(nodeinfo)+self.m*sizeof(np.float64_t) bytes.
@@ -839,6 +1033,12 @@ cdef class cKDTree:
         cdef np.float64_t*mids
         if end_idx-start_idx<=self.leafsize:
             n = <leafnode*>stdlib.malloc(sizeof(leafnode))
+            # Skory
+            n.maxes = <np.float64_t*>stdlib.malloc(sizeof(np.float64_t)*self.m)
+            n.mins =  <np.float64_t*>stdlib.malloc(sizeof(np.float64_t)*self.m)
+            for i in range(self.m):
+                n.maxes[i] = maxes[i]
+                n.mins[i]  = mins[i]
             if n == <leafnode*> NULL: 
                 raise MemoryError
             n.split_dim = -1
@@ -856,10 +1056,15 @@ cdef class cKDTree:
             maxval = maxes[d]
             minval = mins[d]
             if maxval==minval:
-                # all points are identical; warn user?
+                print('may be some duplicate points...')
                 n = <leafnode*>stdlib.malloc(sizeof(leafnode))
                 if n == <leafnode*> NULL: 
                     raise MemoryError
+                n.maxes = <np.float64_t*>stdlib.malloc(sizeof(np.float64_t)*self.m)
+                n.mins = <np.float64_t*>stdlib.malloc(sizeof(np.float64_t)*self.m)
+                for i in range(self.m):
+                    n.mins[i] = mins[i]
+                    n.maxes[i] = maxes[i]
                 n.split_dim = -1
                 n.children = end_idx - start_idx
                 n.start_idx = start_idx
@@ -945,12 +1150,21 @@ cdef class cKDTree:
 
             ni.split_dim = d
             ni.split = split
+            # Skory
+            ni.maxes = <np.float64_t*>stdlib.malloc(sizeof(np.float64_t)*self.m)
+            ni.mins = <np.float64_t*>stdlib.malloc(sizeof(np.float64_t)*self.m)
+            for i in range(self.m):
+                ni.maxes[i] = maxes[i]
+                ni.mins[i] = mins[i]
+                
             return ni
                     
     cdef __free_tree(cKDTree self, innernode* node):
         if node.split_dim!=-1:
             self.__free_tree(node.less)
             self.__free_tree(node.greater)
+        stdlib.free(node.maxes) # Skory
+        stdlib.free(node.mins)
         stdlib.free(node)
 
     def __dealloc__(cKDTree self):
@@ -964,13 +1178,14 @@ cdef class cKDTree:
     # -----
 
     cdef int __query(cKDTree self, 
-            np.float64_t*result_distances, 
-            np.intp_t*result_indices, 
-            np.float64_t*x, 
-            np.intp_t k, 
-            np.float64_t eps, 
-            np.float64_t p, 
-            np.float64_t distance_upper_bound) except -1:
+                     np.float64_t*result_distances, 
+                     np.intp_t*result_indices, 
+                     np.float64_t*x, 
+                     np.intp_t k, 
+                     np.float64_t eps, 
+                     np.float64_t p, 
+                     np.float64_t distance_upper_bound,
+                     np.float64_t*period) except -1:
 
         cdef heap q
         cdef heap neighbors
@@ -980,6 +1195,7 @@ cdef class cKDTree:
         cdef nodeinfo* inf
         cdef nodeinfo* inf2
         cdef np.float64_t d
+        cdef np.float64_t m_left, m_right, m
         cdef np.float64_t epsfac
         cdef np.float64_t min_distance
         cdef np.float64_t far_min_distance
@@ -989,7 +1205,6 @@ cdef class cKDTree:
         cdef innernode* near
         cdef innernode* far
         cdef np.float64_t* side_distances
-
 
         # priority queue for chasing nodes
         # entries are:
@@ -1044,15 +1259,18 @@ cdef class cKDTree:
                 distance_upper_bound = distance_upper_bound**p
 
             while True:
+                print('top', inf.node.split_dim)
+                print(inf.node.mins[0],inf.node.mins[1],inf.node.maxes[0],inf.node.maxes[1])
                 if inf.node.split_dim==-1:
                     node = <leafnode*>inf.node
-
                     # brute-force
                     for i in range(node.start_idx,node.end_idx):
-                        d = _distance_p(
+                        #d = _distance_p(
+                        #        self.raw_data+self.raw_indices[i]*self.m,
+                        #        x,p,self.m,distance_upper_bound)
+                        d = _distance_p_periodic(
                                 self.raw_data+self.raw_indices[i]*self.m,
-                                x,p,self.m,distance_upper_bound)
-                            
+                                x,p,self.m,distance_upper_bound, period)   
                         if d<distance_upper_bound:
                             # replace furthest neighbor
                             if neighbors.n==k:
@@ -1101,6 +1319,8 @@ cdef class cKDTree:
                     else:
                         near = inode.greater
                         far = inode.less
+                    print('bottom', near.split_dim)
+                    print(near.mins[0],near.mins[1],near.maxes[0],near.maxes[1])    
 
                     # near child is at the same distance as the current node
                     # we're going here next, so no point pushing it on the queue
@@ -1113,12 +1333,21 @@ cdef class cKDTree:
                     inf2 = <nodeinfo*>stdlib.malloc(sizeof(nodeinfo)+self.m*sizeof(np.float64_t))
                     if inf2 == <nodeinfo*> NULL:
                         raise MemoryError
-            
+                    
+                    
+                    # Periodicity added by S Skory
+                    m_left = dmin( dabs(far.mins[inode.split_dim] - x[inode.split_dim]), \
+                    period[inode.split_dim] -  dabs(far.mins[inode.split_dim] - x[inode.split_dim]))
+                    m_right = dmin( dabs(far.maxes[inode.split_dim] - x[inode.split_dim]), \
+                    period[inode.split_dim] -  dabs(far.maxes[inode.split_dim] - x[inode.split_dim]))
+                    m = dmin(m_left,m_right)
+                    
                     it2.contents.ptrdata = <char*> inf2
                     inf2.node = far
                     # most side distances unchanged
                     for i in range(self.m):
                         inf2.side_distances[i] = inf.side_distances[i]
+                        
 
                     # one side distance changes
                     # we can adjust the minimum distance without recomputing
@@ -1132,11 +1361,13 @@ cdef class cKDTree:
                             inf.side_distances[inode.split_dim] + \
                             inf2.side_distances[inode.split_dim]
                     else:
-                        inf2.side_distances[inode.split_dim] = dabs(inode.split - 
-                                                                    x[inode.split_dim])**p
-                        far_min_distance = min_distance - \
-                            inf.side_distances[inode.split_dim] + \
-                            inf2.side_distances[inode.split_dim]
+                        #inf2.side_distances[inode.split_dim] = dabs(inode.split - 
+                        #                                            x[inode.split_dim])**p
+                        inf2.side_distances[inode.split_dim] = m*m
+                        #far_min_distance = min_distance - \
+                        #    inf.side_distances[inode.split_dim] + \
+                        #    inf2.side_distances[inode.split_dim]
+                        far_min_distance = m*m
 
                     it2.priority = far_min_distance
 
@@ -1158,7 +1389,6 @@ cdef class cKDTree:
                     result_distances[i] = -neighbor.priority
                 else:
                     result_distances[i] = (-neighbor.priority)**(1./p)
-
             inf = inf2 = <nodeinfo*> NULL
 
         finally:
@@ -1167,13 +1397,13 @@ cdef class cKDTree:
 
             if inf != <nodeinfo*> NULL:
                 stdlib.free(inf)
-
         return 0
 
 
     @cython.boundscheck(False)
     def query(cKDTree self, object x, np.intp_t k=1, np.float64_t eps=0,
-              np.float64_t p=2, np.float64_t distance_upper_bound=infinity):
+              np.float64_t p=2, np.float64_t distance_upper_bound=infinity,
+              object period = None):
         """query(self, x, k=1, eps=0, p=2, distance_upper_bound=np.inf)
         
         Query the kd-tree for nearest neighbors
@@ -1211,6 +1441,15 @@ cdef class cKDTree:
             Missing neighbors are indicated with self.n.
 
         """
+        
+        #process the period parameter
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        if period is None:
+            period = np.array([np.inf]*self.m)
+        else:
+            period = np.asarray(period).astype("float64")
+        cperiod = np.ascontiguousarray(period)
+        
         cdef np.ndarray[np.intp_t, ndim=2] ii
         cdef np.ndarray[np.float64_t, ndim=2] dd
         cdef np.ndarray[np.float64_t, ndim=2] xx
@@ -1236,8 +1475,8 @@ cdef class cKDTree:
         ii.fill(self.n)
         for c in range(n):
             self.__query(&dd[c, 0], &ii[c, 0], &xx[c, 0],
-                         k, eps, p, distance_upper_bound)
-
+                         k, eps, p, distance_upper_bound, <np.float64_t*>cperiod.data)
+        
         if single:
             if k==1:
                 if sizeof(long) < sizeof(np.intp_t):
@@ -1349,7 +1588,8 @@ cdef class cKDTree:
 
 
     def query_ball_point(cKDTree self, object x, np.float64_t r,
-                         np.float64_t p=2., np.float64_t eps=0):
+                         np.float64_t p=2., np.float64_t eps=0,
+                         object period = None):
         """query_ball_point(self, x, r, p, eps)
         
         Find all points within distance r of point(s) x.
@@ -1391,6 +1631,15 @@ cdef class cKDTree:
         [4, 8, 9, 12]
 
         """
+        
+        #process the period parameter
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        if period is None:
+            period = np.array([np.inf]*self.m)
+        else:
+            period = np.asarray(period).astype("float64")
+        cperiod = np.ascontiguousarray(period)
+        
         cdef np.ndarray[np.float64_t, ndim=1, mode="c"] xx
         
         x = np.asarray(x).astype(np.float64)
@@ -1413,7 +1662,7 @@ cdef class cKDTree:
     # ---------------
     cdef int __query_ball_tree_traverse_no_checking(cKDTree self,
                                                     cKDTree other,
-                                                    np.intp_t * results,
+                                                    list results,
                                                     innernode* node1,
                                                     innernode* node2) except -1:
         cdef leafnode *lnode1
@@ -1428,11 +1677,9 @@ cdef class cKDTree:
                 lnode2 = <leafnode*>node2
                 
                 for i in range(lnode1.start_idx, lnode1.end_idx):
-                    #results_i = results[self.raw_indices[i]]
+                    results_i = results[self.raw_indices[i]]
                     for j in range(lnode2.start_idx, lnode2.end_idx):
-                        #list_append(results_i, other.raw_indices[j])
-                        results[self.raw_indices[i]] += 1
-                        
+                        list_append(results_i, other.raw_indices[j])
             else:
                 
                 self.__query_ball_tree_traverse_no_checking(other, results, node1, node2.less)
@@ -1448,7 +1695,7 @@ cdef class cKDTree:
     @cython.cdivision(True)
     cdef int __query_ball_tree_traverse_checking(cKDTree self,
                                                  cKDTree other,
-                                                 np.intp_t * results,
+                                                 list results,
                                                  innernode* node1,
                                                  innernode* node2,
                                                  RectRectDistanceTracker tracker) except -1:
@@ -1470,16 +1717,14 @@ cdef class cKDTree:
                 
                 # brute-force
                 for i in range(lnode1.start_idx, lnode1.end_idx):
-                    #results_i = results[self.raw_indices[i]]
+                    results_i = results[self.raw_indices[i]]
                     for j in range(lnode2.start_idx, lnode2.end_idx):
                         d = _distance_p(
                             self.raw_data + self.raw_indices[i] * self.m,
                             other.raw_data + other.raw_indices[j] * other.m,
                             tracker.p, self.m, tracker.upper_bound)
                         if d <= tracker.upper_bound:
-                            #list_append(results_i, other.raw_indices[j])
-                            results[self.raw_indices[i]] += 1
-                            
+                            list_append(results_i, other.raw_indices[j])
                             
             else:  # 1 is a leaf node, 2 is inner node
 
@@ -1575,12 +1820,9 @@ cdef class cKDTree:
             Rectangle(other.mins, other.maxes),
             p, eps, r)
         
-        cdef np.ndarray[np.intp_t, ndim=1, mode="c"] results
-        #results = [[] for i in range(self.n)]
-        #results = [0 for i in range(self.n)]
-        results = np.zeros((self.n,), dtype=np.intp)
+        results = [[] for i in range(self.n)]
         self.__query_ball_tree_traverse_checking(
-            other, &results[0], self.tree, other.tree, tracker)
+            other, results, self.tree, other.tree, tracker)
 
         return results
 
@@ -2101,3 +2343,4 @@ cdef class cKDTree:
                                                tracker)
         
         return results.to_matrix(shape=(self.n, other.n)).todok()
+        
