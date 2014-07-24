@@ -2067,7 +2067,8 @@ cdef class cKDTree:
                                         np.intp_t * idx,
                                         innernode* node1,
                                         innernode* node2,
-                                        RectRectDistanceTracker tracker) except -1:
+                                        RectRectDistanceTracker tracker,
+                                        np.float64_t*period) except -1:
         cdef leafnode *lnode1
         cdef leafnode *lnode2
         cdef np.float64_t d
@@ -2100,10 +2101,14 @@ cdef class cKDTree:
                     # brute-force
                     for i in range(lnode1.start_idx, lnode1.end_idx):
                         for j in range(lnode2.start_idx, lnode2.end_idx):
-                            d = _distance_p(
+                            #d = _distance_p(
+                            #    self.raw_data + self.raw_indices[i] * self.m,
+                            #    other.raw_data + other.raw_indices[j] * other.m,
+                            #    tracker.p, self.m, tracker.max_distance)
+                            d = _distance_p_periodic(
                                 self.raw_data + self.raw_indices[i] * self.m,
                                 other.raw_data + other.raw_indices[j] * other.m,
-                                tracker.p, self.m, tracker.max_distance)
+                                tracker.p, self.m, tracker.max_distance, period)
                             # I think it's usually cheaper to test d against all r's
                             # than to generate a distance array, sort it, then
                             # search for all r's via binary search
@@ -2115,13 +2120,13 @@ cdef class cKDTree:
                     tracker.push_less_of(2, node2)
                     self.__count_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1, node2.less, tracker)
+                        node1, node2.less, tracker, period)
                     tracker.pop()
 
                     tracker.push_greater_of(2, node2)
                     self.__count_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1, node2.greater, tracker)
+                        node1, node2.greater, tracker, period)
                     tracker.pop()
                 
             else:  # 1 is an inner node
@@ -2129,13 +2134,13 @@ cdef class cKDTree:
                     tracker.push_less_of(1, node1)
                     self.__count_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.less, node2, tracker)
+                        node1.less, node2, tracker, period)
                     tracker.pop()
                     
                     tracker.push_greater_of(1, node1)
                     self.__count_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.greater, node2, tracker)
+                        node1.greater, node2, tracker, period)
                     tracker.pop()
                     
                 else: # 1 and 2 are inner nodes
@@ -2143,13 +2148,13 @@ cdef class cKDTree:
                     tracker.push_less_of(2, node2)
                     self.__count_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.less, node2.less, tracker)
+                        node1.less, node2.less, tracker, period)
                     tracker.pop()
                         
                     tracker.push_greater_of(2, node2)
                     self.__count_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.less, node2.greater, tracker)
+                        node1.less, node2.greater, tracker, period)
                     tracker.pop()
                     tracker.pop()
                         
@@ -2157,20 +2162,20 @@ cdef class cKDTree:
                     tracker.push_less_of(2, node2)
                     self.__count_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.greater, node2.less, tracker)
+                        node1.greater, node2.less, tracker, period)
                     tracker.pop()
                         
                     tracker.push_greater_of(2, node2)
                     self.__count_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.greater, node2.greater, tracker)
+                        node1.greater, node2.greater, tracker, period)
                     tracker.pop()
                     tracker.pop()
                     
         return 0
 
     @cython.boundscheck(False)
-    def count_neighbors(cKDTree self, cKDTree other, object r, np.float64_t p=2.):
+    def count_neighbors(cKDTree self, cKDTree other, object r, np.float64_t p=2., object period = None):
         """count_neighbors(self, other, r, p)
 
         Count how many nearby pairs can be formed.
@@ -2199,6 +2204,15 @@ cdef class cKDTree:
             and so may overflow if very large (2e9).
 
         """
+        
+        #process the period parameter
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        if period is None:
+            period = np.array([np.inf]*self.m)
+        else:
+            period = np.asarray(period).astype("float64")
+        cperiod = np.ascontiguousarray(period)
+        
         cdef np.intp_t n_queries, i
         cdef np.ndarray[np.float64_t, ndim=1, mode="c"] real_r
         cdef np.ndarray[np.intp_t, ndim=1, mode="c"] results, idx
@@ -2228,7 +2242,7 @@ cdef class cKDTree:
         tracker = RectRectDistanceTracker(
             Rectangle(self.mins, self.maxes),
             Rectangle(other.mins, other.maxes),
-            p, 0.0, 0.0)
+            p, 0.0, 0.0, period)
         
         # Go!
         results = np.zeros((n_queries,), dtype=np.intp)
@@ -2236,7 +2250,7 @@ cdef class cKDTree:
         self.__count_neighbors_traverse(other, n_queries,
                                         &real_r[0], &results[0], &idx[0],
                                         self.tree, other.tree,
-                                        tracker)
+                                        tracker,  <np.float64_t*>cperiod.data)
         
         if np.shape(r) == ():
             if results[0] <= <np.intp_t> LONG_MAX:
