@@ -587,6 +587,7 @@ cdef class RectRectDistanceTracker(object):
 
     cdef np.intp_t stack_size, stack_max_size
     cdef RR_stack_item *stack
+    cdef readonly np.ndarray cperiod
 
     # Stack handling
     cdef int _init_stack(self) except -1:
@@ -622,7 +623,7 @@ cdef class RectRectDistanceTracker(object):
                  
         cdef np.ndarray[np.float64_t, ndim=1] cperiod
         if period is None:
-            period = np.array([np.inf]*self.m)
+            period = np.array([np.inf]*rect1.m)
         else:
             period = np.asarray(period).astype("float64")
         cperiod = np.ascontiguousarray(period)
@@ -782,6 +783,7 @@ cdef class PointRectDistanceTracker(object):
     cdef np.float64_t *pt
     cdef np.float64_t p, epsfac, upper_bound
     cdef np.float64_t min_distance, max_distance
+    cdef readonly np.ndarray cperiod
 
     cdef np.intp_t stack_size, stack_max_size
     cdef RP_stack_item *stack
@@ -819,7 +821,7 @@ cdef class PointRectDistanceTracker(object):
         
         cdef np.ndarray[np.float64_t, ndim=1] cperiod
         if period is None:
-            period = np.array([np.inf]*self.m)
+            period = np.array([np.inf]*rect.m)
         else:
             period = np.asarray(period).astype("float64")
         cperiod = np.ascontiguousarray(period)
@@ -1520,7 +1522,8 @@ cdef class cKDTree:
     # ----------------
     cdef int __query_ball_point_traverse_no_checking(cKDTree self,
                                                      list results,
-                                                     innernode* node) except -1:
+                                                     innernode* node,
+                                                     np.float64_t*period) except -1:
         cdef leafnode* lnode
         cdef np.intp_t i
 
@@ -1529,8 +1532,8 @@ cdef class cKDTree:
             for i in range(lnode.start_idx, lnode.end_idx):
                 list_append(results, self.raw_indices[i])
         else:
-            self.__query_ball_point_traverse_no_checking(results, node.less)
-            self.__query_ball_point_traverse_no_checking(results, node.greater)
+            self.__query_ball_point_traverse_no_checking(results, node.less, period)
+            self.__query_ball_point_traverse_no_checking(results, node.greater, period)
 
         return 0
 
@@ -1539,7 +1542,8 @@ cdef class cKDTree:
     cdef int __query_ball_point_traverse_checking(cKDTree self,
                                                   list results,
                                                   innernode* node,
-                                                  PointRectDistanceTracker tracker) except -1:
+                                                  PointRectDistanceTracker tracker,
+                                                  np.float64_t*period) except -1:
         cdef leafnode* lnode
         cdef np.float64_t d
         cdef np.intp_t i
@@ -1547,25 +1551,28 @@ cdef class cKDTree:
         if tracker.min_distance > tracker.upper_bound * tracker.epsfac:
             return 0
         elif tracker.max_distance < tracker.upper_bound / tracker.epsfac:
-            self.__query_ball_point_traverse_no_checking(results, node)
+            self.__query_ball_point_traverse_no_checking(results, node, period)
         elif node.split_dim == -1:  # leaf node
             lnode = <leafnode*>node
             # brute-force
             for i in range(lnode.start_idx, lnode.end_idx):
-                d = _distance_p(
+                #d = _distance_p(
+                #    self.raw_data + self.raw_indices[i] * self.m,
+                #    tracker.pt, tracker.p, self.m, tracker.upper_bound)
+                d = _distance_p_periodic(
                     self.raw_data + self.raw_indices[i] * self.m,
-                    tracker.pt, tracker.p, self.m, tracker.upper_bound)
+                    tracker.pt, tracker.p, self.m, tracker.upper_bound, period)
                 if d <= tracker.upper_bound:
                     list_append(results, self.raw_indices[i])
         else:
             tracker.push_less_of(node)
             self.__query_ball_point_traverse_checking(
-                results, node.less, tracker)
+                results, node.less, tracker, period)
             tracker.pop()
             
             tracker.push_greater_of(node)
             self.__query_ball_point_traverse_checking(
-                results, node.greater, tracker)
+                results, node.greater, tracker, period)
             tracker.pop()
             
         return 0
@@ -1575,15 +1582,24 @@ cdef class cKDTree:
                                  np.float64_t* x,
                                  np.float64_t r,
                                  np.float64_t p,
-                                 np.float64_t eps):
+                                 np.float64_t eps,
+                                 object period=None):
+                                 
+        #process the period parameter
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        if period is None:
+            period = np.array([np.inf]*self.m)
+        else:
+            period = np.asarray(period).astype("float64")
+        cperiod = np.ascontiguousarray(period)
 
         tracker = PointRectDistanceTracker()
         tracker.init(x, Rectangle(self.mins, self.maxes),
-                     p, eps, r)
+                     p, eps, r, period)
         
         results = []
         self.__query_ball_point_traverse_checking(
-            results, self.tree, tracker)
+            results, self.tree, tracker, <np.float64_t*>cperiod.data)
         return results
 
 
@@ -1648,13 +1664,13 @@ cdef class cKDTree:
                              "%d-dimensional KDTree" % (int(x.shape[-1]), int(self.m)))
         if len(x.shape) == 1:
             xx = np.ascontiguousarray(x, dtype=np.float64)
-            return self.__query_ball_point(&xx[0], r, p, eps)
+            return self.__query_ball_point(&xx[0], r, p, eps, period)
         else:
             retshape = x.shape[:-1]
             result = np.empty(retshape, dtype=np.object)
             for c in np.ndindex(retshape):
                 xx = np.ascontiguousarray(x[c], dtype=np.float64)
-                result[c] = self.__query_ball_point(&xx[0], r, p, eps)
+                result[c] = self.__query_ball_point(&xx[0], r, p, eps, period)
             return result
 
     # ---------------
@@ -1664,7 +1680,8 @@ cdef class cKDTree:
                                                     cKDTree other,
                                                     list results,
                                                     innernode* node1,
-                                                    innernode* node2) except -1:
+                                                    innernode* node2,
+                                                    np.float64_t*period) except -1:
         cdef leafnode *lnode1
         cdef leafnode *lnode2
         cdef list results_i
@@ -1682,12 +1699,12 @@ cdef class cKDTree:
                         list_append(results_i, other.raw_indices[j])
             else:
                 
-                self.__query_ball_tree_traverse_no_checking(other, results, node1, node2.less)
-                self.__query_ball_tree_traverse_no_checking(other, results, node1, node2.greater)
+                self.__query_ball_tree_traverse_no_checking(other, results, node1, node2.less, period)
+                self.__query_ball_tree_traverse_no_checking(other, results, node1, node2.greater, period)
         else:
             
-            self.__query_ball_tree_traverse_no_checking(other, results, node1.less, node2)
-            self.__query_ball_tree_traverse_no_checking(other, results, node1.greater, node2)
+            self.__query_ball_tree_traverse_no_checking(other, results, node1.less, node2, period)
+            self.__query_ball_tree_traverse_no_checking(other, results, node1.greater, node2, period)
 
         return 0
 
@@ -1698,7 +1715,8 @@ cdef class cKDTree:
                                                  list results,
                                                  innernode* node1,
                                                  innernode* node2,
-                                                 RectRectDistanceTracker tracker) except -1:
+                                                 RectRectDistanceTracker tracker,
+                                                 np.float64_t*period) except -1:
         cdef leafnode *lnode1
         cdef leafnode *lnode2
         cdef list results_i
@@ -1708,7 +1726,7 @@ cdef class cKDTree:
         if tracker.min_distance > tracker.upper_bound * tracker.epsfac:
             return 0
         elif tracker.max_distance < tracker.upper_bound / tracker.epsfac:
-            self.__query_ball_tree_traverse_no_checking(other, results, node1, node2)
+            self.__query_ball_tree_traverse_no_checking(other, results, node1, node2, period)
         elif node1.split_dim == -1:  # 1 is leaf node
             lnode1 = <leafnode*>node1
             
@@ -1719,10 +1737,14 @@ cdef class cKDTree:
                 for i in range(lnode1.start_idx, lnode1.end_idx):
                     results_i = results[self.raw_indices[i]]
                     for j in range(lnode2.start_idx, lnode2.end_idx):
-                        d = _distance_p(
+                        #d = _distance_p(
+                        #    self.raw_data + self.raw_indices[i] * self.m,
+                        #    other.raw_data + other.raw_indices[j] * other.m,
+                        #    tracker.p, self.m, tracker.upper_bound)
+                        d = _distance_p_periodic(
                             self.raw_data + self.raw_indices[i] * self.m,
                             other.raw_data + other.raw_indices[j] * other.m,
-                            tracker.p, self.m, tracker.upper_bound)
+                            tracker.p, self.m, tracker.upper_bound, period)
                         if d <= tracker.upper_bound:
                             list_append(results_i, other.raw_indices[j])
                             
@@ -1730,12 +1752,12 @@ cdef class cKDTree:
 
                 tracker.push_less_of(2, node2)
                 self.__query_ball_tree_traverse_checking(
-                    other, results, node1, node2.less, tracker)
+                    other, results, node1, node2.less, tracker, period)
                 tracker.pop()
                     
                 tracker.push_greater_of(2, node2)
                 self.__query_ball_tree_traverse_checking(
-                    other, results, node1, node2.greater, tracker)
+                    other, results, node1, node2.greater, tracker, period)
                 tracker.pop()
             
                 
@@ -1743,12 +1765,12 @@ cdef class cKDTree:
             if node2.split_dim == -1:  # 1 is an inner node, 2 is a leaf node
                 tracker.push_less_of(1, node1)
                 self.__query_ball_tree_traverse_checking(
-                    other, results, node1.less, node2, tracker)
+                    other, results, node1.less, node2, tracker, period)
                 tracker.pop()
                     
                 tracker.push_greater_of(1, node1)
                 self.__query_ball_tree_traverse_checking(
-                    other, results, node1.greater, node2, tracker)
+                    other, results, node1.greater, node2, tracker, period)
                 tracker.pop()
                 
             else: # 1 & 2 are inner nodes
@@ -1756,12 +1778,12 @@ cdef class cKDTree:
                 tracker.push_less_of(1, node1)
                 tracker.push_less_of(2, node2)
                 self.__query_ball_tree_traverse_checking(
-                    other, results, node1.less, node2.less, tracker)
+                    other, results, node1.less, node2.less, tracker, period)
                 tracker.pop()
                     
                 tracker.push_greater_of(2, node2)
                 self.__query_ball_tree_traverse_checking(
-                    other, results, node1.less, node2.greater, tracker)
+                    other, results, node1.less, node2.greater, tracker, period)
                 tracker.pop()
                 tracker.pop()
 
@@ -1769,12 +1791,12 @@ cdef class cKDTree:
                 tracker.push_greater_of(1, node1)
                 tracker.push_less_of(2, node2)
                 self.__query_ball_tree_traverse_checking(
-                    other, results, node1.greater, node2.less, tracker)
+                    other, results, node1.greater, node2.less, tracker, period)
                 tracker.pop()
                     
                 tracker.push_greater_of(2, node2)
                 self.__query_ball_tree_traverse_checking(
-                    other, results, node1.greater, node2.greater, tracker)
+                    other, results, node1.greater, node2.greater, tracker, period)
                 tracker.pop()
                 tracker.pop()
             
@@ -1782,7 +1804,8 @@ cdef class cKDTree:
             
 
     def query_ball_tree(cKDTree self, cKDTree other,
-                        np.float64_t r, np.float64_t p=2., np.float64_t eps=0):
+                        np.float64_t r, np.float64_t p=2., np.float64_t eps=0,
+                        object period = None):
         """query_ball_tree(self, other, r, p, eps)
 
         Find all pairs of points whose distance is at most r
@@ -1809,6 +1832,14 @@ cdef class cKDTree:
             list of the indices of its neighbors in ``other.data``.
 
         """
+        
+        #process the period parameter
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        if period is None:
+            period = np.array([np.inf]*self.m)
+        else:
+            period = np.asarray(period).astype("float64")
+        cperiod = np.ascontiguousarray(period)
 
         # Make sure trees are compatible
         if self.m != other.m:
@@ -1818,11 +1849,11 @@ cdef class cKDTree:
         tracker = RectRectDistanceTracker(
             Rectangle(self.mins, self.maxes),
             Rectangle(other.mins, other.maxes),
-            p, eps, r)
+            p, eps, r, period)
         
         results = [[] for i in range(self.n)]
         self.__query_ball_tree_traverse_checking(
-            other, results, self.tree, other.tree, tracker)
+            other, results, self.tree, other.tree, tracker,  <np.float64_t*>cperiod.data)
 
         return results
 
