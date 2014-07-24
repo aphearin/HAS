@@ -2,6 +2,9 @@
 #April 7, 2014
 #Calculate the halo occupation function
 
+def main():
+	print 'hello'
+
 def hod(halo_ID, halo_mass, Ngal, bins, mask):
     #Returns the average number of galaxies per host.
     #halo_ID: integer identification number of galaxy host ID

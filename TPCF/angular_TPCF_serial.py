@@ -27,7 +27,7 @@ def main():
         
     #convert tables into numpy arrays
     data_1 = np.array([data_1[c] for c in data_1.columns]).T
-    data_2 = np.array([data_2[c] for c in data_2.columns]).T
+    data_2 = np.array([data_2[c] for c in data_2.columns]).T[0:len(data_1)]
         
     #define log radial bins
     bins = np.arange(-3,1,0.1)

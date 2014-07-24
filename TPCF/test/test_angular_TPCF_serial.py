@@ -10,9 +10,12 @@ def test_TPCF():
     import numpy as np
     from astropy.io import ascii
     from astropy.table import Table
+    import os
     
-    filename_1 = "./test_data/test_radec_1.dat"
-    filename_2 = "./test_data/test_radec_2.dat"
+    #get test data filepaths/filenames
+    dir = os.path.dirname(__file__)
+    filename_1 = os.path.join(dir, './test_data/test_radec_1.dat')
+    filename_2 = os.path.join(dir, './test_data/test_radec_2.dat')
     #read in data
     from astropy.io import ascii
     from astropy.table import Table

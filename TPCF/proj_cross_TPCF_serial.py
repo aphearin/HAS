@@ -13,9 +13,9 @@ def main():
     #filename_1 = sys.argv[1]
     #filename_2 = sys.argv[2]
     #filename_3 = sys.argv[3]
-    filename_1 = 'test/test_radec_1.dat'
-    filename_2 = 'test/test_radec_2.dat'
-    filename_3 = 'test/test_ran_radec_2.dat'
+    filename_1 = 'test/test_data/test_radec_1.dat'
+    filename_2 = 'test/test_data/test_radec_2.dat'
+    filename_3 = 'test/test_data/test_ran_radec_2.dat'
     
     #read in data
     from astropy.io import ascii
@@ -93,7 +93,7 @@ def proj_cross_npairs_serial(data_1,data_2,r_bins,cosmo):
     from astropy.cosmology.funcs import comoving_distance
     import numpy as np
     #from scipy.spatial import cKDTree
-    from ckdtree import cKDTree #modified version of scipy.spatial.ckdtree code
+    from kdtree.ckdtree import cKDTree #modified version of scipy.spatial.ckdtree code
     
     #create tree structures for angular pair calculation
     xyz_1 = np.empty((len(data_1),3))

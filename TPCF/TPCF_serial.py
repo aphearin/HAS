@@ -80,7 +80,7 @@ def TPCF_estimator(DD,RR,DR,factor):
     return corr
     
     
-def npairs(data_1, data_2, bins):
+def npairs(data_1, data_2, bins, periodic=False, Lbox = 250.0):
     '''
     Count pairs with separations given by bins.
     parameters
