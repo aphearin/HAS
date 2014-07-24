@@ -2,11 +2,11 @@
 # Additional contributions by Patrick Varilly and Sturla Molden
 # Released under the scipy license
 
-# Periodic boundary conditions implemented by Stephen Skory 2011
+# partial support for periodic boundary conditions implemented by Stephen Skory 2011
 # yt-project
 # https://bitbucket.org/yt_analysis/yt
 
-# Modified by Duncan Campbell
+# Modified by Duncan Campbell to fully include periodic boundary conditions
 # Yale University
 # july 22, 2014
 
@@ -425,8 +425,8 @@ cdef inline np.float64_t min_dist_interval_interval_p_periodic(Rectangle rect1,
     """
     d_lr = dmin(dabs(rect1.mins[k] - rect2.maxes[k]), period[k] - dabs(rect1.mins[k] - rect2.maxes[k]))
     d_rl = dmin(dabs(rect1.maxes[k] - rect2.mins[k]), period[k] - dabs(rect1.maxes[k] - rect2.mins[k]))
-    if dmax(0, dmax(rect1.mins[k] - rect2.maxes[k], rect2.mins[k] - rect1.maxes[k])) == 0: return 0
-    else: return dmin(d_lr, d_rl)
+    if dmax(0, dmax(rect1.mins[k] - rect2.maxes[k], rect2.mins[k] - rect1.maxes[k])) == 0: return 0 #overlap
+    else: return dmin(d_lr, d_rl) ** p
     
 
 cdef inline np.float64_t max_dist_interval_interval_p(Rectangle rect1,
@@ -453,11 +453,11 @@ cdef inline np.float64_t max_dist_interval_interval_p_periodic(Rectangle rect1,
     delta_1 = rect1.maxes[k]-rect1.mins[k]
     delta_2 = rect2.maxes[k]-rect2.mins[k]
     if (delta_1+delta_2) >= (period[k]/2.0): return (period[k]/2.0) ** p
-    else: return dmax(d_lr,dmax(d_rl,dmax(d_rr,d_ll)))
+    else: return dmax(d_lr,dmax(d_rl,dmax(d_rr,d_ll))) ** p
 
 
 #note: I have not modified these to work with periodic boundary conditions despite the names!
-#I don't think ill be using a p=inf metric anytime soon...
+#I don't think ill be using a p=inf metric anytime soon... -DC
 
 # Interval arithmetic in m-D
 # ==========================
@@ -1864,7 +1864,8 @@ cdef class cKDTree:
     cdef int __query_pairs_traverse_no_checking(cKDTree self,
                                                 set results,
                                                 innernode* node1,
-                                                innernode* node2) except -1:
+                                                innernode* node2,
+                                                np.float64_t*period) except -1:
         cdef leafnode *lnode1
         cdef leafnode *lnode2
         cdef list results_i
@@ -1889,20 +1890,20 @@ cdef class cKDTree:
                                              self.raw_indices[j])
                             
             else:
-                self.__query_pairs_traverse_no_checking(results, node1, node2.less)
-                self.__query_pairs_traverse_no_checking(results, node1, node2.greater)
+                self.__query_pairs_traverse_no_checking(results, node1, node2.less, period)
+                self.__query_pairs_traverse_no_checking(results, node1, node2.greater, period)
         else:
             if node1 == node2:
                 # Avoid traversing (node1.less, node2.greater) and
                 # (node1.greater, node2.less) (it's the same node pair twice
                 # over, which is the source of the complication in the
                 # original KDTree.query_pairs)
-                self.__query_pairs_traverse_no_checking(results, node1.less, node2.less)
-                self.__query_pairs_traverse_no_checking(results, node1.less, node2.greater)
-                self.__query_pairs_traverse_no_checking(results, node1.greater, node2.greater)
+                self.__query_pairs_traverse_no_checking(results, node1.less, node2.less, period)
+                self.__query_pairs_traverse_no_checking(results, node1.less, node2.greater, period)
+                self.__query_pairs_traverse_no_checking(results, node1.greater, node2.greater, period)
             else:
-                self.__query_pairs_traverse_no_checking(results, node1.less, node2)
-                self.__query_pairs_traverse_no_checking(results, node1.greater, node2)
+                self.__query_pairs_traverse_no_checking(results, node1.less, node2, period)
+                self.__query_pairs_traverse_no_checking(results, node1.greater, node2, period)
 
         return 0
 
@@ -1911,7 +1912,8 @@ cdef class cKDTree:
                                              set results,
                                              innernode* node1,
                                              innernode* node2,
-                                             RectRectDistanceTracker tracker) except -1:
+                                             RectRectDistanceTracker tracker,
+                                             np.float64_t*period) except -1:
         cdef leafnode *lnode1
         cdef leafnode *lnode2
         cdef list results_i
@@ -1921,7 +1923,7 @@ cdef class cKDTree:
         if tracker.min_distance > tracker.upper_bound * tracker.epsfac:
             return 0
         elif tracker.max_distance < tracker.upper_bound / tracker.epsfac:
-            self.__query_pairs_traverse_no_checking(results, node1, node2)
+            self.__query_pairs_traverse_no_checking(results, node1, node2, period)
         elif node1.split_dim == -1:  # 1 is leaf node
             lnode1 = <leafnode*>node1
             
@@ -1938,10 +1940,14 @@ cdef class cKDTree:
                         min_j = lnode2.start_idx
                         
                     for j in range(min_j, lnode2.end_idx):
-                        d = _distance_p(
+                        #d = _distance_p(
+                        #    self.raw_data + self.raw_indices[i] * self.m,
+                        #    self.raw_data + self.raw_indices[j] * self.m,
+                        #    tracker.p, self.m, tracker.upper_bound)
+                        d = _distance_p_periodic(
                             self.raw_data + self.raw_indices[i] * self.m,
                             self.raw_data + self.raw_indices[j] * self.m,
-                            tracker.p, self.m, tracker.upper_bound)
+                            tracker.p, self.m, tracker.upper_bound, period)
                         if d <= tracker.upper_bound:
                             set_add_ordered_pair(results,
                                                  self.raw_indices[i],
@@ -1950,36 +1956,36 @@ cdef class cKDTree:
             else:  # 1 is a leaf node, 2 is inner node
                 tracker.push_less_of(2, node2)
                 self.__query_pairs_traverse_checking(
-                    results, node1, node2.less, tracker)
+                    results, node1, node2.less, tracker, period)
                 tracker.pop()
                     
                 tracker.push_greater_of(2, node2)
                 self.__query_pairs_traverse_checking(
-                    results, node1, node2.greater, tracker)
+                    results, node1, node2.greater, tracker, period)
                 tracker.pop()
                 
         else:  # 1 is an inner node
             if node2.split_dim == -1:  # 1 is an inner node, 2 is a leaf node
                 tracker.push_less_of(1, node1)
                 self.__query_pairs_traverse_checking(
-                    results, node1.less, node2, tracker)
+                    results, node1.less, node2, tracker, period)
                 tracker.pop()
                 
                 tracker.push_greater_of(1, node1)
                 self.__query_pairs_traverse_checking(
-                    results, node1.greater, node2, tracker)
+                    results, node1.greater, node2, tracker, period)
                 tracker.pop()
                 
             else: # 1 and 2 are inner nodes
                 tracker.push_less_of(1, node1)
                 tracker.push_less_of(2, node2)
                 self.__query_pairs_traverse_checking(
-                    results, node1.less, node2.less, tracker)
+                    results, node1.less, node2.less, tracker, period)
                 tracker.pop()
                     
                 tracker.push_greater_of(2, node2)
                 self.__query_pairs_traverse_checking(
-                    results, node1.less, node2.greater, tracker)
+                    results, node1.less, node2.greater, tracker, period)
                 tracker.pop()
                 tracker.pop()
                     
@@ -1991,12 +1997,12 @@ cdef class cKDTree:
                     # the original KDTree.query_pairs)
                     tracker.push_less_of(2, node2)
                     self.__query_pairs_traverse_checking(
-                        results, node1.greater, node2.less, tracker)
+                        results, node1.greater, node2.less, tracker, period)
                     tracker.pop()
                     
                 tracker.push_greater_of(2, node2)
                 self.__query_pairs_traverse_checking(
-                    results, node1.greater, node2.greater, tracker)
+                    results, node1.greater, node2.greater, tracker, period)
                 tracker.pop()
                 tracker.pop()
                 
@@ -2004,7 +2010,7 @@ cdef class cKDTree:
             
 
     def query_pairs(cKDTree self, np.float64_t r, np.float64_t p=2.,
-                    np.float64_t eps=0):
+                    np.float64_t eps=0, object period = None):
         """query_pairs(self, r, p, eps)
 
         Find all pairs of points whose distance is at most r.
@@ -2030,14 +2036,22 @@ cdef class cKDTree:
 
         """
         
+        #process the period parameter
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        if period is None:
+            period = np.array([np.inf]*self.m)
+        else:
+            period = np.asarray(period).astype("float64")
+        cperiod = np.ascontiguousarray(period)
+        
         tracker = RectRectDistanceTracker(
             Rectangle(self.mins, self.maxes),
             Rectangle(self.mins, self.maxes),
-            p, eps, r)
+            p, eps, r, period)
         
         results = set()
         self.__query_pairs_traverse_checking(
-            results, self.tree, self.tree, tracker)
+            results, self.tree, self.tree, tracker,  <np.float64_t*>cperiod.data)
         
         return results
 
