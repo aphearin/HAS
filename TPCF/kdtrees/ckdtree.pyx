@@ -933,6 +933,8 @@ cdef struct innernode:
     np.intp_t children
     np.float64_t* maxes
     np.float64_t* mins
+    np.intp_t start_idx
+    np.intp_t end_idx
     np.float64_t split
     innernode* less
     innernode* greater
@@ -1158,6 +1160,9 @@ cdef class cKDTree:
             for i in range(self.m):
                 ni.maxes[i] = maxes[i]
                 ni.mins[i] = mins[i]
+            
+            ni.start_idx = start_idx
+            ni.end_idx = end_idx
                 
             return ni
                     
@@ -2259,6 +2264,227 @@ cdef class cKDTree:
                 return results[0]
         elif len(np.shape(r))==1:
             return results
+
+    # ---------------
+    # wcount_neighbors
+    # ---------------
+    cdef int __wcount_neighbors_traverse(cKDTree self,
+                                         cKDTree other,
+                                         np.intp_t n_queries,
+                                         np.float64_t* r,
+                                         np.float64_t* results,
+                                         np.intp_t * idx,
+                                         innernode* node1,
+                                         innernode* node2,
+                                         RectRectDistanceTracker tracker,
+                                         np.float64_t*period,
+                                         np.float64_t*weights) except -1:
+        cdef leafnode *lnode1
+        cdef leafnode *lnode2
+        cdef np.float64_t d
+        cdef np.intp_t *old_idx
+        cdef np.intp_t old_n_queries, l, i, j
+        cdef np.float64_t wsum
+
+        # Speed through pairs of nodes all of whose children are close
+        # and see if any work remains to be done
+        old_idx = idx
+        cdef np.ndarray[np.intp_t, ndim=1] inner_idx
+        inner_idx = np.empty((n_queries,), dtype=np.intp)
+        idx = &inner_idx[0]
+
+        old_n_queries = n_queries
+        n_queries = 0
+        for i in range(old_n_queries):
+            if tracker.max_distance < r[old_idx[i]]:
+                #results[old_idx[i]] += node1.children * node2.children
+                #need to run through all children and sum weights
+                wsum = 0.0
+                for j in range(node2.start_idx, node2.end_idx): #Fuck yes.
+                    wsum += weights[other.raw_indices[j]]
+                results[old_idx[i]] += node1.children * wsum
+            elif tracker.min_distance <= r[old_idx[i]]:
+                idx[n_queries] = old_idx[i]
+                n_queries += 1
+
+        if n_queries > 0:
+            # OK, need to probe a bit deeper
+            if node1.split_dim == -1:  # 1 is leaf node
+                lnode1 = <leafnode*>node1
+                if node2.split_dim == -1:  # 1 & 2 are leaves
+                    lnode2 = <leafnode*>node2
+                    
+                    # brute-force
+                    for i in range(lnode1.start_idx, lnode1.end_idx):
+                        for j in range(lnode2.start_idx, lnode2.end_idx):
+                            #d = _distance_p(
+                            #    self.raw_data + self.raw_indices[i] * self.m,
+                            #    other.raw_data + other.raw_indices[j] * other.m,
+                            #    tracker.p, self.m, tracker.max_distance)
+                            d = _distance_p_periodic(
+                                self.raw_data + self.raw_indices[i] * self.m,
+                                other.raw_data + other.raw_indices[j] * other.m,
+                                tracker.p, self.m, tracker.max_distance, period)
+                            # I think it's usually cheaper to test d against all r's
+                            # than to generate a distance array, sort it, then
+                            # search for all r's via binary search
+                            for l in range(n_queries):
+                                if d <= r[idx[l]]:
+                                    results[idx[l]] += weights[other.raw_indices[j]]
+                                
+                else:  # 1 is a leaf node, 2 is inner node
+                    tracker.push_less_of(2, node2)
+                    self.__wcount_neighbors_traverse(
+                        other, n_queries, r, results, idx,
+                        node1, node2.less, tracker, period, weights)
+                    tracker.pop()
+
+                    tracker.push_greater_of(2, node2)
+                    self.__wcount_neighbors_traverse(
+                        other, n_queries, r, results, idx,
+                        node1, node2.greater, tracker, period, weights)
+                    tracker.pop()
+                
+            else:  # 1 is an inner node
+                if node2.split_dim == -1:  # 1 is an inner node, 2 is a leaf node
+                    tracker.push_less_of(1, node1)
+                    self.__wcount_neighbors_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.less, node2, tracker, period, weights)
+                    tracker.pop()
+                    
+                    tracker.push_greater_of(1, node1)
+                    self.__wcount_neighbors_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.greater, node2, tracker, period, weights)
+                    tracker.pop()
+                    
+                else: # 1 and 2 are inner nodes
+                    tracker.push_less_of(1, node1)
+                    tracker.push_less_of(2, node2)
+                    self.__wcount_neighbors_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.less, node2.less, tracker, period, weights)
+                    tracker.pop()
+                        
+                    tracker.push_greater_of(2, node2)
+                    self.__wcount_neighbors_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.less, node2.greater, tracker, period, weights)
+                    tracker.pop()
+                    tracker.pop()
+                        
+                    tracker.push_greater_of(1, node1)
+                    tracker.push_less_of(2, node2)
+                    self.__wcount_neighbors_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.greater, node2.less, tracker, period, weights)
+                    tracker.pop()
+                        
+                    tracker.push_greater_of(2, node2)
+                    self.__wcount_neighbors_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.greater, node2.greater, tracker, period, weights)
+                    tracker.pop()
+                    tracker.pop()
+                    
+        return 0
+
+    @cython.boundscheck(False)
+    def wcount_neighbors(cKDTree self, cKDTree other, object r, np.float64_t p=2.,
+                         object period = None, object weights = None):
+        """count_neighbors(self, other, r, p)
+
+        Count how many nearby pairs can be formed.
+
+        Count the number of pairs (x1,x2) can be formed, with x1 drawn
+        from self and x2 drawn from `other`, and where
+        ``distance(x1, x2, p) <= r``.
+        This is the "two-point correlation" described in Gray and Moore 2000,
+        "N-body problems in statistical learning", and the code here is based
+        on their algorithm.
+
+        Parameters
+        ----------
+        other : KDTree instance
+            The other tree to draw points from.
+        r : float or one-dimensional array of floats
+            The radius to produce a count for. Multiple radii are searched with
+            a single tree traversal.
+        p : float, 1<=p<=infinity
+            Which Minkowski p-norm to use
+
+        Returns
+        -------
+        result : int or 1-D array of ints
+            The number of pairs. Note that this is internally stored in a numpy int,
+            and so may overflow if very large (2e9).
+
+        """
+        
+        #process the period parameter
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        if period is None:
+            period = np.array([np.inf]*self.m)
+        else:
+            period = np.asarray(period).astype("float64")
+        cperiod = np.ascontiguousarray(period)
+        
+        cdef np.intp_t n_queries, i
+        cdef np.ndarray[np.float64_t, ndim=1, mode="c"] real_r
+        cdef np.ndarray[np.intp_t, ndim=1, mode="c"] idx
+        cdef np.ndarray[np.float64_t, ndim=1, mode="c"] results
+        
+        #process the weights parameter
+        cdef np.ndarray[np.float64_t, ndim=1] cweights
+        if weights is None:
+            weights = np.array([1.0]*other.n)
+        else:
+            weights = np.asarray(weights).astype("float64")
+        cweights = np.ascontiguousarray(weights)
+
+        # Make sure trees are compatible
+        if self.m != other.m:
+            raise ValueError("Trees passed to count_neighbors have different dimensionality")
+
+        # Make a copy of r array to ensure it's contiguous and to modify it
+        # below
+        if np.shape(r) == ():
+            real_r = np.array([r], dtype=np.float64)
+            n_queries = 1
+        elif len(np.shape(r))==1:
+            real_r = np.array(r, dtype=np.float64)
+            n_queries = r.shape[0]
+        else:
+            raise ValueError("r must be either a single value or a one-dimensional array of values")
+
+        # Internally, we represent all distances as distance ** p
+        if p != infinity:
+            for i in range(n_queries):
+                if real_r[i] != infinity:
+                    real_r[i] = real_r[i] ** p
+
+        # Track node-to-node min/max distances
+        tracker = RectRectDistanceTracker(
+            Rectangle(self.mins, self.maxes),
+            Rectangle(other.mins, other.maxes),
+            p, 0.0, 0.0, period)
+        
+        # Go!
+        results = np.zeros((n_queries,), dtype=np.float64)
+        results.fill(0.0)
+        idx = np.arange(n_queries, dtype=np.intp)
+        self.__wcount_neighbors_traverse(other, n_queries,
+                                        &real_r[0], &results[0], &idx[0],
+                                        self.tree, other.tree,
+                                        tracker,  <np.float64_t*>cperiod.data,
+                                        <np.float64_t*>cweights.data)
+
+        if np.shape(r) == ():
+            return results[0]
+        elif len(np.shape(r))==1:
+            return results
+
 
     # ----------------------
     # sparse_distance_matrix
