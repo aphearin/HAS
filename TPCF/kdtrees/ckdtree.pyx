@@ -1370,11 +1370,11 @@ cdef class cKDTree:
                     else:
                         #inf2.side_distances[inode.split_dim] = dabs(inode.split - 
                         #                                            x[inode.split_dim])**p
-                        inf2.side_distances[inode.split_dim] = m*m
+                        inf2.side_distances[inode.split_dim] = m**p
                         #far_min_distance = min_distance - \
                         #    inf.side_distances[inode.split_dim] + \
                         #    inf2.side_distances[inode.split_dim]
-                        far_min_distance = m*m
+                        far_min_distance = m**p
 
                     it2.priority = far_min_distance
 
@@ -1435,6 +1435,8 @@ cdef class cKDTree:
             tree searches, so if you are doing a series of nearest-neighbor
             queries, it may help to supply the distance to the nearest neighbor
             of the most recent point.
+        period : array_like, dimension self.m
+            A vector indicating the periodic length along each dimension.
 
         Returns
         -------
@@ -1628,6 +1630,8 @@ cdef class cKDTree:
             nearest points are further than ``r / (1 + eps)``, and branches are
             added in bulk if their furthest points are nearer than
             ``r * (1 + eps)``.
+        period : array_like, dimension self.m
+            A vector indicating the periodic length along each dimension.
 
         Returns
         -------
@@ -1829,6 +1833,8 @@ cdef class cKDTree:
             if their nearest points are further than ``r/(1+eps)``, and
             branches are added in bulk if their furthest points are nearer
             than ``r * (1+eps)``.  `eps` has to be non-negative.
+        period : array_like, dimension self.m
+            A vector indicating the periodic length along each dimension.
 
         Returns
         -------
@@ -2032,6 +2038,8 @@ cdef class cKDTree:
             if their nearest points are further than ``r/(1+eps)``, and
             branches are added in bulk if their furthest points are nearer
             than ``r * (1+eps)``.  `eps` has to be non-negative.
+        period : array_like, dimension self.m
+            A vector indicating the periodic length along each dimension.
 
         Returns
         -------
@@ -2201,6 +2209,8 @@ cdef class cKDTree:
             a single tree traversal.
         p : float, 1<=p<=infinity
             Which Minkowski p-norm to use
+        period : array_like, dimension self.m
+            A vector indicating the periodic length along each dimension.
 
         Returns
         -------
@@ -2393,9 +2403,9 @@ cdef class cKDTree:
     @cython.boundscheck(False)
     def wcount_neighbors(cKDTree self, cKDTree other, object r, np.float64_t p=2.,
                          object period = None, object weights = None):
-        """count_neighbors(self, other, r, p)
+        """wcount_neighbors(self, other, r, p)
 
-        Count how many nearby pairs can be formed.
+        Weighted count of how many nearby pairs can be formed.
 
         Count the number of pairs (x1,x2) can be formed, with x1 drawn
         from self and x2 drawn from `other`, and where
@@ -2413,11 +2423,15 @@ cdef class cKDTree:
             a single tree traversal.
         p : float, 1<=p<=infinity
             Which Minkowski p-norm to use
+        period : array_like, dimension self.m
+            A vector indicating the periodic length along each dimension.
+        weights : array_like, dimension other.n
+            A vector indicating the weight attached to each point in other.
 
         Returns
         -------
-        result : int or 1-D array of ints
-            The number of pairs. Note that this is internally stored in a numpy int,
+        result : float or 1-D array of floats
+            The weighted number of pairs. Note that this is internally stored in a numpy float,
             and so may overflow if very large (2e9).
 
         """
