@@ -6,6 +6,7 @@ from ..npairs_brute_force import npairs
 from ..pairs_brute_force import pairs
 from ..weighted_npairs_brute_force import wnpairs
 import numpy as np
+import sys
 
 def test_count_neighbors():
 
@@ -150,54 +151,70 @@ def test_query_periodic(): #not a very good test...
 
 
 def test_wcount_neighbors_periodic():
+    #need to know the float precision of the computer
+    epsilon = np.float64(sys.float_info[8])
 
-    data_1 = np.random.random((100,3))
-    data_2 = np.random.random((100,3))
+    N1 = 100
+    N2 = 100
+    data_1 = np.random.random((N1,3))
+    data_2 = np.random.random((N2,3))
     
     tree_1 = cKDTree(data_1)
     tree_2 = cKDTree(data_2)
     
     period = np.array([1,1,1])
-    weights = np.zeros((len(data_2),))+0.1
+    weights = np.zeros((N2,))+0.1
     
-    n0 = wnpairs(data_1, data_2, 0.1, period=period, weights=weights)[0]
+    n0 = wnpairs(data_1, data_2, 0.1, period=period, weights2=weights)[0]
     n1 = tree_1.wcount_neighbors(tree_2,0.1, period=period) #no weights
     n2 = tree_1.wcount_neighbors(tree_2,0.1, period=period, weights=weights) #constant weights
     n3 = tree_1.count_neighbors(tree_2,0.1, period=period) #non-weighted function
     
-    print(np.around(n0, decimals=4),np.around(n2, decimals=4))
-    assert np.around(n2, decimals=4)==np.around(n3*0.1, decimals=4), 'weight counts are wrong'
-    assert np.around(n1, decimals=4)==np.around(n3*1.0, decimals=4), 'total counts are wrong... maybe weird weight counts still'
-    assert np.around(n0, decimals=4)==np.around(n2, decimals=4), 'total counts are wrong... maybe weird weight counts still'
+    #what is the expected precision?
+    ep = epsilon*np.sqrt(np.float64(N1*N2))
     
+    print('brute force result:{0:0.10f} ckdtree result:{1:0.10f}'.format(n0,n2))
+    assert np.fabs(n2-n3*0.1)/n0 < 10.0 * ep, 'error in weighted counts.'
+    assert np.fabs(n0-n2)/n0 < 10.0 * ep, 'error in weighted.'
+    
+    #define random weights for test data set 2
     weights = np.random.random((len(data_2),))
     
-    n0 = wnpairs(data_1, data_2, 0.25, period=period, weights=weights)[0]
+    n0 = wnpairs(data_1, data_2, 0.25, period=period, weights2=weights)[0]
     n2 = tree_1.wcount_neighbors(tree_2,0.25, period=period, weights=weights) #constant weights
     
-    '''
-    for i in range(0,len(weights)):
-        print(i,weights[i])
-    '''
-    
-    print(np.around(n0, decimals=4),np.around(n2, decimals=4)) 
-    assert np.around(n0, decimals=4)==np.around(n2, decimals=4), 'weights are being handeled incorrectly'
+    print('brute force result:{0:0.10f} ckdtree result:{1:0.10f}'.format(n0,n2))
+    print('error:{0} expected error:{1}'.format(np.fabs(n0-n2)/n0,ep))
+    assert np.fabs(n0-n2)/n0 < 10.0 * ep, 'weights are being handeled incorrectly'
     
 
 def test_wcount_neighbors_large():
+    #need to know the float precision of the computer
+    epsilon = np.float64(sys.float_info[8])
 
-    data_1 = np.random.random((10000,3))
-    data_2 = np.random.random((10000,3))
+    #create random coordinates
+    N1 = 10000
+    N2 = 10000
+    data_1 = np.random.random((N1,3))
+    data_2 = np.random.random((N2,3))
     
+    #build trees for points
     tree_1 = cKDTree(data_1)
     tree_2 = cKDTree(data_2)
     
-    weights = np.random.random((len(data_2),))
+    #define random weights for test data set 2
+    weights = np.random.random((N2,))
     
-    n0 = wnpairs(data_1, data_2, 1.0, weights=weights)[0]
-    n2 = tree_1.wcount_neighbors(tree_2,1.0, weights=weights) #constant weights
+    #calculate weighted sums
+    n0 = wnpairs(data_1, data_2, 1.0, weights2=weights)[0]
+    n1 = tree_1.wcount_neighbors(tree_2,1.0, weights=weights)
     
-    assert np.around(n0, decimals=4)==np.around(n2, decimals=4), 'weights are being handeled incorrectly'
+    #what is the expected precision?
+    ep = epsilon*np.sqrt(np.float64(N1*N2))
+    
+    print('brute force result:{0:0.10f} ckdtree result:{1:0.10f}'.format(n0,n1))
+    print('error:{0} expected error:{1}'.format(np.fabs(n0-n1)/n0,ep))
+    assert np.fabs(n0-n1)/n0 < 10.0 * ep, 'weights are being handeled incorrectly'
     
     
 
