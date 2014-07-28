@@ -11,7 +11,7 @@ import numpy as np
 def main():
     '''
     example:
-    python npairs_brute_force.py
+    python weighted_npairs_brute_force.py
     '''
     import matplotlib.pyplot as plt 
     
@@ -20,6 +20,8 @@ def main():
     N2 = 100
     x1 = np.random.random((N1,3))
     x2 = np.random.random((N2,3))
+    weights1 = np.random.random((N1,))
+    weights2 = np.random.random((N2,))
     
     #define radial bins
     r = np.arange(0,0.5,0.1)
@@ -28,7 +30,7 @@ def main():
     period = np.array([1,1,1]) #periodic box with sides of length 1
     
     #number of pairs less than r
-    n = npairs(x1, x2, r, period)
+    n = wnpairs(x1, x2, r, period, weights1, weights2)
     
     #to get pairs in bins take diff
     DD = np.diff(n)
@@ -50,8 +52,10 @@ def wnpairs(data1, data2, r, period=None, weights1=None, weights2=None):
         r: 1-d array of radial distances to count pairs less than
         period: (k,) array defining axis-aligned periodic boundary conditions.  If none, 
             PBCs are set to infinity
+        weights1: (n1,) array of float weights
+        weights2: (n2,) array of float weights
     returns
-        n: 
+        n: float, number of pairs, or weighted number counts of pairs
     '''
     
     #work with arrays!
@@ -146,5 +150,3 @@ def distance(x1, x2, period=None):
 
 if __name__ == '__main__':
     main()
-    
-    
