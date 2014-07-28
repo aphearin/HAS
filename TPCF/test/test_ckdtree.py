@@ -167,7 +167,7 @@ def test_wcount_neighbors_periodic():
     
     n0 = wnpairs(data_1, data_2, 0.1, period=period, weights2=weights)[0]
     n1 = tree_1.wcount_neighbors(tree_2,0.1, period=period) #no weights
-    n2 = tree_1.wcount_neighbors(tree_2,0.1, period=period, weights=weights) #constant weights
+    n2 = tree_1.wcount_neighbors(tree_2,0.1, period=period, oweights=weights) #constant weights
     n3 = tree_1.count_neighbors(tree_2,0.1, period=period) #non-weighted function
     
     #what is the expected precision?
@@ -181,7 +181,7 @@ def test_wcount_neighbors_periodic():
     weights = np.random.random((len(data_2),))
     
     n0 = wnpairs(data_1, data_2, 0.25, period=period, weights2=weights)[0]
-    n2 = tree_1.wcount_neighbors(tree_2,0.25, period=period, weights=weights) #constant weights
+    n2 = tree_1.wcount_neighbors(tree_2,0.25, period=period, oweights=weights) #constant weights
     
     print('brute force result:{0:0.10f} ckdtree result:{1:0.10f}'.format(n0,n2))
     print('error:{0} expected error:{1}'.format(np.fabs(n0-n2)/n0,ep))
@@ -207,7 +207,7 @@ def test_wcount_neighbors_large():
     
     #calculate weighted sums
     n0 = wnpairs(data_1, data_2, 1.0, weights2=weights)[0]
-    n1 = tree_1.wcount_neighbors(tree_2,1.0, weights=weights)
+    n1 = tree_1.wcount_neighbors(tree_2,1.0, oweights=weights)
     
     #what is the expected precision?
     ep = epsilon*np.sqrt(np.float64(N1*N2))
