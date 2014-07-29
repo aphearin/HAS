@@ -189,6 +189,7 @@ def test_wcount_neighbors_periodic():
     
 
 def test_wcount_neighbors_large():
+    return 0 #skip this as it takes some time!
     #need to know the float precision of the computer
     epsilon = np.float64(sys.float_info[8])
 
@@ -208,6 +209,72 @@ def test_wcount_neighbors_large():
     #calculate weighted sums
     n0 = wnpairs(data_1, data_2, 1.0, weights2=weights)[0]
     n1 = tree_1.wcount_neighbors(tree_2,1.0, oweights=weights)
+    
+    #what is the expected precision?
+    ep = epsilon*np.sqrt(np.float64(N1*N2))
+    
+    print('brute force result:{0:0.10f} ckdtree result:{1:0.10f}'.format(n0,n1))
+    print('error:{0} expected error:{1}'.format(np.fabs(n0-n1)/n0,ep))
+    assert np.fabs(n0-n1)/n0 < 10.0 * ep, 'weights are being handeled incorrectly'
+
+
+def test_wcount_neighbors_double_weights():
+    #need to know the float precision of the computer
+    epsilon = np.float64(sys.float_info[8])
+
+    #create random coordinates
+    N1 = 100
+    N2 = 100
+    data_1 = np.random.random((N1,3))
+    data_2 = np.random.random((N2,3))
+    
+    #build trees for points
+    tree_1 = cKDTree(data_1)
+    tree_2 = cKDTree(data_2)
+    
+    #define random weights for test data set 2
+    weights1 = np.random.random((N1,))
+    weights2 = np.random.random((N2,))
+    
+    #calculate weighted sums
+    n0 = wnpairs(data_1, data_2, 1.0, weights1=weights1, weights2=weights2)[0]
+    n1 = tree_1.wcount_neighbors(tree_2,1.0, sweights=weights1, oweights=weights2)
+    
+    #what is the expected precision?
+    ep = epsilon*np.sqrt(np.float64(N1*N2))
+    
+    print('brute force result:{0:0.10f} ckdtree result:{1:0.10f}'.format(n0,n1))
+    print('error:{0} expected error:{1}'.format(np.fabs(n0-n1)/n0,ep))
+    assert np.fabs(n0-n1)/n0 < 10.0 * ep, 'weights are being handeled incorrectly'
+
+
+def test_wcount_neighbors_double_weights_functionality():
+    #need to know the float precision of the computer
+    epsilon = np.float64(sys.float_info[8])
+    
+    #user defined function
+    from ..kdtrees.ckdtree import Function
+    class MyFunction(Function):
+        def evaluate(self, x, y):
+            return x*y
+
+    #create random coordinates
+    N1 = 100
+    N2 = 100
+    data_1 = np.random.random((N1,3))
+    data_2 = np.random.random((N2,3))
+    
+    #build trees for points
+    tree_1 = cKDTree(data_1)
+    tree_2 = cKDTree(data_2)
+    
+    #define random weights for test data set 2
+    weights1 = np.random.random((N1,))
+    weights2 = np.random.random((N2,))
+    
+    #calculate weighted sums
+    n0 = wnpairs(data_1, data_2, 1.0, weights1=weights1, weights2=weights2)[0]
+    n1 = tree_1.wcount_neighbors(tree_2,1.0, sweights=weights1, oweights=weights2, w=MyFunction())
     
     #what is the expected precision?
     ep = epsilon*np.sqrt(np.float64(N1*N2))
