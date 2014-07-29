@@ -2638,6 +2638,7 @@ cdef class cKDTree:
             A vector indicating the weight attached to each point in self.
         oweights : array_like, dimension other.n
             A vector indicating the weight attached to each point in other.
+        w: ckdtree.Function object.  Function used in weighting.  None results in w1*w2
 
         Returns
         -------
