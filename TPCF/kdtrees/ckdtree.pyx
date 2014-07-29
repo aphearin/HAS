@@ -2006,7 +2006,7 @@ cdef class cKDTree:
 
     def query_ball_tree_wcounts(cKDTree self, cKDTree other,
                         np.float64_t r, np.float64_t p=2., np.float64_t eps=0,
-                        object period = None, object weights = None):
+                        object period = None, object oweights = None):
         """query_ball_tree_wcounts_counts(self, other, r, p, eps, period, weights)
 
         Find all weighted pair counts of points whose distance is at most r
@@ -2046,13 +2046,13 @@ cdef class cKDTree:
             period = np.asarray(period).astype("float64")
         cperiod = np.ascontiguousarray(period)
         
-        #process the weights parameter
-        cdef np.ndarray[np.float64_t, ndim=1] cweights
-        if weights is None:
-            weights = np.array([1.0]*other.n)
+        #process the oweights parameter
+        cdef np.ndarray[np.float64_t, ndim=1] coweights
+        if oweights is None:
+            oweights = np.array([1.0]*other.n, dtype=np.float64)
         else:
-            weights = np.asarray(weights).astype("float64")
-        cweights = np.ascontiguousarray(weights)
+            oweights = np.asarray(oweights).astype("float64")
+        coweights = np.ascontiguousarray(oweights) #copy of oweights
 
         # Make sure trees are compatible
         if self.m != other.m:
@@ -2068,7 +2068,7 @@ cdef class cKDTree:
         self.__query_ball_tree_wcounts_traverse_checking(other, results, self.tree,
                                                          other.tree, tracker,
                                                          <np.float64_t*>cperiod.data,
-                                                         <np.float64_t*>cweights.data)
+                                                         <np.float64_t*>coweights.data)
 
         return results
 
@@ -2660,7 +2660,7 @@ cdef class cKDTree:
         #process the self weights parameter
         cdef np.ndarray[np.float64_t, ndim=1] csweights #copy of self weights
         if sweights is None:
-            sweights = np.array([1.0]*self.n)
+            sweights = np.array([1.0]*self.n, dtype=np.float64)
         else:
             sweights = np.asarray(sweights).astype("float64")
         csweights = np.ascontiguousarray(sweights)
@@ -2668,7 +2668,7 @@ cdef class cKDTree:
         #process the other weights parameter
         cdef np.ndarray[np.float64_t, ndim=1] coweights #copy of other weights
         if oweights is None:
-            oweights = np.array([1.0]*other.n)
+            oweights = np.array([1.0]*other.n, dtype=np.float64)
         else:
             oweights = np.asarray(oweights).astype("float64")
         coweights = np.ascontiguousarray(oweights)
