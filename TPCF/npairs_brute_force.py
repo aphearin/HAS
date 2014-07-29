@@ -7,7 +7,6 @@
 
 from __future__ import division, print_function
 import numpy as np
-import sys
 
 def main():
     '''
@@ -57,8 +56,11 @@ def npairs(data1, data2, r, period=None):
     
     #work with arrays!
     data1 = np.asarray(data1)
+    if data1.ndim ==1: data1 = np.array([data1])
     data2 = np.asarray(data2)
+    if data2.ndim ==1: data2 = np.array([data2])
     r = np.asarray(r)
+    if r.size ==1: r = np.array([r])
     
     #Check to make sure both data sets have the same dimension. Otherwise, throw an error!
     if np.shape(data1)[-1]!=np.shape(data2)[-1]:
@@ -80,13 +82,13 @@ def npairs(data1, data2, r, period=None):
     for i in range(0,N1): #calculate distance between every point and every other point
         x1 = data1[i,:]
         x2 = data2
-        dd[i*N2:i*N2+N2] = _distance(x1, x2, period)
+        dd[i*N2:i*N2+N2] = distance(x1, x2, period)
         
     #sort results
     dd.sort()
     #count number less than r
-    n = np.zeros((len(r),))
-    for i in range(len(r)): #this is ugly... is there a sexier way?
+    n = np.zeros((r.size,), dtype=np.int)
+    for i in range(r.size): #this is ugly... is there a sexier way?
         if r[i]>np.min(period)/2:
             print("Warning: counting pairs with seperations larger than period/2 is awkward.")
             print("r=", r[i], "  min(period)/2=",np.min(period)/2)
@@ -95,7 +97,7 @@ def npairs(data1, data2, r, period=None):
     return n
 
 
-def _distance(x1, x2, period=None):
+def distance(x1, x2, period=None):
     '''
     Calculate the cartesian distance between points with periodic boundary conditions.
     parameters
@@ -107,12 +109,21 @@ def _distance(x1, x2, period=None):
         d: returns (n,) vector of distances
     '''
     
+    #Process period entry and check for consistency.
+    if period is None:
+            period = np.array([np.inf]*np.shape(x1)[-1])
+    else:
+        period = np.asarray(period).astype("float64")
+        if np.shape(period)[0] != np.shape(x1)[-1]:
+            raise ValueError("period should have len == dimension of points")
+            return None
+    
     x1 = np.asarray(x1)
     x2 = np.asarray(x2)
     
     d = np.minimum(np.fabs(x1 - x2), period - np.fabs(x1 - x2))
     d = d * d
-    d = np.sqrt(np.sum(d, axis=1))
+    d = np.sqrt(np.sum(d, axis=len(np.shape(d))-1))
     
     return d
 

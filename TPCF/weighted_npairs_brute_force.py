@@ -3,7 +3,8 @@
 #Duncan Campbell
 #Yale University
 #July 24, 2014
-#calculate pair counts with dumb brute force method as a sanity check for other codes.
+#calculate pair counts with dumb brute force method as a sanity check for other codes.  
+#  This version uses weights attached to each data point when doing the sums.
 
 from __future__ import division, print_function
 import numpy as np

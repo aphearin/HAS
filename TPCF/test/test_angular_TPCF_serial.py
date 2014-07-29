@@ -23,7 +23,7 @@ def test_TPCF():
     data_2 = ascii.read(filename_2) 
         
     #convert tables into numpy arrays
-    data_1 = np.array([data_1[c] for c in data_1.columns]).T
+    data_1 = np.array([data_1[c] for c in data_1.columns]).T[0:100]
     data_2 = np.array([data_2[c] for c in data_2.columns]).T[0:len(data_1)] #made shorter!
     
     #define log angular bins
