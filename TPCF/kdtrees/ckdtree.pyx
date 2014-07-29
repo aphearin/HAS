@@ -1875,7 +1875,8 @@ cdef class cKDTree:
     # ---------------
     cdef int __query_ball_tree_wcounts_traverse_no_checking(cKDTree self,
                                                             cKDTree other,
-                                                            list results,
+                                                            #list results,
+                                                            np.float64_t* results,
                                                             innernode* node1,
                                                             innernode* node2,
                                                             np.float64_t*period,
@@ -1892,10 +1893,10 @@ cdef class cKDTree:
                 lnode2 = <leafnode*>node2
                 
                 for i in range(lnode1.start_idx, lnode1.end_idx):
-                    results_i = results[self.raw_indices[i]]
+                    #results_i = results[self.raw_indices[i]]
                     for j in range(lnode2.start_idx, lnode2.end_idx):
                         #list_append(results_i, other.raw_indices[j])
-                        results_i += weights[other.raw_indices[j]]
+                        results[self.raw_indices[i]]= weights[other.raw_indices[j]]
             else:
                 
                 self.__query_ball_tree_wcounts_traverse_no_checking(other, results, node1, node2.less, period, weights)
@@ -1911,7 +1912,8 @@ cdef class cKDTree:
     @cython.cdivision(True)
     cdef int __query_ball_tree_wcounts_traverse_checking(cKDTree self,
                                                          cKDTree other,
-                                                         list results,
+                                                         #list results,
+                                                         np.float64_t* results,
                                                          innernode* node1,
                                                          innernode* node2,
                                                          RectRectDistanceTracker tracker,
@@ -1935,7 +1937,7 @@ cdef class cKDTree:
                 
                 # brute-force
                 for i in range(lnode1.start_idx, lnode1.end_idx):
-                    results_i = results[self.raw_indices[i]]
+                    #results_i = results[self.raw_indices[i]]
                     for j in range(lnode2.start_idx, lnode2.end_idx):
                         #d = _distance_p(
                         #    self.raw_data + self.raw_indices[i] * self.m,
@@ -1947,7 +1949,7 @@ cdef class cKDTree:
                             tracker.p, self.m, tracker.upper_bound, period)
                         if d <= tracker.upper_bound:
                             #list_append(results_i, other.raw_indices[j])
-                            results_i += weights[other.raw_indices[j]]
+                            results[self.raw_indices[i]]= weights[other.raw_indices[j]]
                             
             else:  # 1 is a leaf node, 2 is inner node
 
@@ -2064,8 +2066,14 @@ cdef class cKDTree:
             Rectangle(other.mins, other.maxes),
             p, eps, r, period)
         
-        results = [[] for i in range(self.n)]
-        self.__query_ball_tree_wcounts_traverse_checking(other, results, self.tree,
+        #results = [[] for i in range(self.n)]
+        cdef np.ndarray[np.float64_t, ndim=1, mode="c"] results
+        results = np.zeros((self.n,), dtype=np.float64)
+        #self.__query_ball_tree_wcounts_traverse_checking(other, results, self.tree,
+        #                                                 other.tree, tracker,
+        #                                                 <np.float64_t*>cperiod.data,
+        #                                                 <np.float64_t*>coweights.data)
+        self.__query_ball_tree_wcounts_traverse_checking(other, &results[0], self.tree,
                                                          other.tree, tracker,
                                                          <np.float64_t*>cperiod.data,
                                                          <np.float64_t*>coweights.data)
