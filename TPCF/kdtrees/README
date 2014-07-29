@@ -13,9 +13,10 @@ Current available functions are:
     query -- accepts PBCs
     query_ball_point -- accepts PBCs
     query_ball_tree -- accepts PBCs
+    query_ball_tree_wcounts --  accepts PBCs, and weights on other
     query_pairs -- accepts PBCs
     count_neighbors -- accepts PBCs
-    wcount_neighbors -- like count_neighbors, but accepts weights.
+    wcount_neighbors -- like count_neighbors, but accepts weights for other and self.
     sparse_distance_matrix -- does not have support for PBCs because I can't think of a 
         use for it currently.
     
