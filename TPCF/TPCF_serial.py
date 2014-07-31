@@ -6,6 +6,7 @@
 #calculate the 2-point correlation function serially
 
 from __future__ import division, print_function
+import numpy as np
 
 def main():
     '''
@@ -18,11 +19,11 @@ def main():
     
     import sys
     import os
-    import numpy as np
     from astropy.io import ascii
     from astropy.table import Table
     
     print("running cross-correlation...")
+    #this first option is for my test files, so only works if you have a copy or make one!
     if len(sys.argv)==1:
         savename = './test/test_data/test_out.dat'
         filename_1 = './test/test_data/test_D.dat'
@@ -74,16 +75,18 @@ def TPCF(data_1, data_2, bins, period=None):
     paramaters
     data_1: N,k array or list of points
     data_2: N,k array or list of points
+    period: length k array defining axis aligned PBCs. If set to none, PBCs = infinity.
     returns
     correlation function, bins
     '''
     
-    import math
-    import numpy as np
+    if period != None:
+        if np.max(bins)>np.min(period)/2:
+            print(np.max(bins),np.min(period)/2)
+            raise ValueError('Cannot calculate for seperations larger than min(period)')
     
-    if np.max(bins)>np.min(period)/2:
-        print(np.max(bins),np.min(period)/2)
-        raise ValueError('Cannot calculate for seperations larger than min(period)')
+    if data_1.shape[-1]!=data_2.shape[-1]:
+        raise ValueError('Data 1 and data 2 must have same dimension.')
     
     #count pairs
     DD,RR,DR,bins = npairs(data_1, data_2, bins, period)
@@ -106,7 +109,6 @@ def TPCF_estimator(DD,RR,DR,factor):
     Landy-Szalay estimator for the correlation function.
     returns NaN's where RR==0.
     '''
-    import numpy as np
     #dont raise an error if there is a division by 0
     old_settings = np.seterr(divide='ignore', invalid='ignore')
     
@@ -124,7 +126,6 @@ def TPCF_estimator_periodic(DR,n,bins,period):
     '''
     TPCF estimator for a Euclidean manifold with periodic boundary conditions.
     '''
-    import numpy as np
     
     m = len(period)
     dV = nball_volume(bins,m)
@@ -137,6 +138,7 @@ def TPCF_estimator_periodic(DR,n,bins,period):
 
 
 def nball_volume(R,m):
+    
     import math
     
     return (math.pi**(m/2)/math.gamma(m/2+1))*R**m
@@ -149,13 +151,13 @@ def npairs(data_1, data_2, bins, period=None):
         data_1: N,k array or list of points
         data_2: N,k array or list of points
         bins: array or list of continuos bins edges
+        period: length k array defining axis aligned PBCs. If set to none, PBCs = infinity.
     returns:
         DD_11: data_1-data_1 pairs (auto correlation)
         DD_22: data_1-data_2 pairs (auto correlation)
         DD_12: data_2-data_2 pairs (cross-correlation)
         bins
     '''
-    import numpy as np
     #from scipy.spatial import cKDTree
     from kdtrees.ckdtree import cKDTree
     
@@ -167,7 +169,7 @@ def npairs(data_1, data_2, bins, period=None):
     KDT_2 = cKDTree(data_2)
     
     counts_11 = KDT_1.count_neighbors(KDT_1, bins, period=period)
-    if data_1 != data_2:
+    if np.all(data_1 != data_2):
         counts_22 = KDT_2.count_neighbors(KDT_2, bins, period=period)
         counts_12 = KDT_1.count_neighbors(KDT_2, bins, period=period)
     else:
@@ -179,6 +181,56 @@ def npairs(data_1, data_2, bins, period=None):
     DD_12     = np.diff(counts_12)
     
     return DD_11, DD_22, DD_12, bins
+
+
+def preformance_test():
+    import time
+    import matplotlib.pyplot as plt
+    
+    #ten radial bins
+    bins=np.arange(0,0.5,0.05)
+    
+    print("number of radial bins: {0}".format(len(bins)))
+    
+    times = []
+    numbers = [100**2,1000**2,10000**2]
+    p_times = []
+    p_numbers = [100**2,1000**2,10000**2]
+    
+    #cross correlation
+    for N in numbers:
+        N1=np.sqrt(N)
+        N2=np.sqrt(N)
+        data_1 = np.random.random((N1,3))
+        data_2 = np.random.random((N2,3))
+        start = time.time()
+        corr,bins = TPCF(data_1, data_2, bins, period=None)
+        dt = time.time()-start
+        times.append(dt)
+        print("number of pairs:{0}  time (s):{1}".format(N1*N2,dt))
+    
+    #cross correlation w/ PBCs
+    for N in p_numbers:
+        period=np.array([1.0,1.0,1.0],dtype=np.float64)
+        N1=np.sqrt(N)
+        N2=np.sqrt(N)
+        data_1 = np.random.random((N1,3))
+        data_2 = np.random.random((N2,3))
+        start = time.time()
+        corr,bins = TPCF(data_1, data_2, bins, period=period)
+        dt = time.time()-start
+        p_times.append(dt)
+        print("number of pairs:{0}  time (s):{1}".format(N1*N2,dt))
+    
+    
+    plt.figure()
+    plt.plot(numbers,times, '-o', color='blue')
+    plt.plot(p_numbers,p_times, '-o', color='green')
+    plt.xlabel('N1 x N2')
+    plt.ylabel('time (s)')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.show()
 
 
 if __name__ == '__main__':
