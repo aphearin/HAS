@@ -182,7 +182,7 @@ def wnpairs(data_1, data_2, bins, period=None , weights_1=None, weights_2=None, 
         period: length k array defining axis aligned PBCs. If set to none, PBCs = infinity.
         weights1: (N1,) array of float weights
         weights2: (N2,) array of float weights
-        wf: ckdtree.Function object , weighting function. None uses standard return w1*w1.
+        wf: ckdtree.Function object , weighting function. None uses standard return w1*w2.
         comm: mpi Intracommunicator object, or None (run on one core)
     returns:
         DD_11: data_1-data_1 weighted pairs (auto correlation)
