@@ -2,6 +2,8 @@
 
 from __future__ import division
 
+#This is mostly a code fragment.  Does not do anything particularly useful as it is.
+
 def main():
     '''
     Example code to calculate the projected 2PCF using proj_cross_npairs_serial().
@@ -37,7 +39,7 @@ def main():
     print 'len(ran_2) :', N3
     
     #define radial bins
-    r_bins = np.arange(-3,1,0.2) #Mpc
+    r_bins = np.arange(-2,1,0.2) #Mpc
     r_bins = 10.0**r_bins
     r_bin_centers = (r_bins[:-1]+r_bins[1:])/2.0
     
@@ -93,7 +95,7 @@ def proj_cross_npairs_serial(data_1,data_2,r_bins,cosmo):
     from astropy.cosmology.funcs import comoving_distance
     import numpy as np
     #from scipy.spatial import cKDTree
-    from kdtree.ckdtree import cKDTree #modified version of scipy.spatial.ckdtree code
+    from kdtrees.ckdtree import cKDTree #modified version of scipy.spatial.ckdtree code
     
     #create tree structures for angular pair calculation
     xyz_1 = np.empty((len(data_1),3))
@@ -119,10 +121,10 @@ def proj_cross_npairs_serial(data_1,data_2,r_bins,cosmo):
     #run a tree query for each theta bin
     pp = np.zeros(len(r_bins)) #pair count storage array
     N1 = len(data_1)
-    prev_pairs = np.zeros(len(data_1))
+    prev_pairs = np.zeros((len(data_1),))
     for i in range(0,len(theta_bins)):
         #calculate bins for angular separations
-        pairs = np.array(KDT_1.query_ball_tree(KDT_2, c_bins[i]))
+        pairs = np.array(KDT_1.query_ball_tree_wcounts(KDT_2, c_bins[i]))
         #convert angular separation into projected physical separation
         r_proj = X/(1.0+z)*theta_bins[i]
         #calculate which r_proj bin each theta_bin falls in
