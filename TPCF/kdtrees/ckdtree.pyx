@@ -2063,7 +2063,7 @@ cdef class cKDTree:
                     #results_i = results[self.raw_indices[i]]
                     for j in range(lnode2.start_idx, lnode2.end_idx):
                         #list_append(results_i, other.raw_indices[j])
-                        results[self.raw_indices[i]]= w(sweights[self.raw_indices[i]],oweights[other.raw_indices[j]],saux[self.raw_indices[i]],oaux[other.raw_indices[j]])
+                        results[self.raw_indices[i]] += w.evaluate(sweights[self.raw_indices[i]],oweights[other.raw_indices[j]],saux[self.raw_indices[i]],oaux[other.raw_indices[j]])
             else:
                 
                 self.__query_ball_tree_wcounts_traverse_no_checking(other, results, node1, node2.less, period, sweights, oweights, w, saux, oaux)
@@ -2119,7 +2119,7 @@ cdef class cKDTree:
                             tracker.p, self.m, tracker.upper_bound, period)
                         if d <= tracker.upper_bound:
                             #list_append(results_i, other.raw_indices[j])
-                            results[self.raw_indices[i]]= w(sweights[self.raw_indices[i]],oweights[other.raw_indices[j]],saux[self.raw_indices[i]],oaux[other.raw_indices[j]])
+                            results[self.raw_indices[i]] += w.evaluate(sweights[self.raw_indices[i]],oweights[other.raw_indices[j]],saux[self.raw_indices[i]],oaux[other.raw_indices[j]])
                             
             else:  # 1 is a leaf node, 2 is inner node
 
