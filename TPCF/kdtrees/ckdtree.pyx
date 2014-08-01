@@ -2734,7 +2734,10 @@ cdef class cKDTree:
                 for j in range(node2.start_idx, node2.end_idx): #Fuck yes.
                     for k in range(node1.start_idx, node1.end_idx):
                         #wsum += oweights[other.raw_indices[j]]*sweights[self.raw_indices[k]]
-                        wsum += w.evaluate(sweights[self.raw_indices[k]],oweights[other.raw_indices[j]],saux[other.raw_indices[k]],oaux[self.raw_indices[j]])
+                        wsum += w.evaluate(sweights[self.raw_indices[k]],
+                                                    oweights[other.raw_indices[j]],
+                                                    saux[self.raw_indices[k]],
+                                                    oaux[other.raw_indices[j]])
                 results[old_idx[i]] += wsum
             elif tracker.min_distance <= r[old_idx[i]]:
                 idx[n_queries] = old_idx[i]
@@ -2764,7 +2767,10 @@ cdef class cKDTree:
                             for l in range(n_queries):
                                 if d <= r[idx[l]]:
                                     #results[idx[l]] += oweights[other.raw_indices[j]] * sweights[self.raw_indices[i]]
-                                    results[idx[l]] += w.evaluate(sweights[self.raw_indices[i]],oweights[other.raw_indices[j]],saux[other.raw_indices[i]],oaux[self.raw_indices[j]])
+                                    results[idx[l]] += w.evaluate(sweights[self.raw_indices[i]],
+                                                                  oweights[other.raw_indices[j]],
+                                                                  saux[self.raw_indices[i]],
+                                                                  oaux[other.raw_indices[j]])
                                 
                 else:  # 1 is a leaf node, 2 is inner node
                     tracker.push_less_of(2, node2)
