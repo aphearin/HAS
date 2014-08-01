@@ -255,7 +255,7 @@ def test_wcount_neighbors_double_weights_functionality():
     #user defined function
     from ..kdtrees.ckdtree import Function
     class MyFunction(Function):
-        def evaluate(self, x, y):
+        def evaluate(self, x, y, a, b):
             return x*y
 
     #create random coordinates
@@ -278,6 +278,33 @@ def test_wcount_neighbors_double_weights_functionality():
     
     #what is the expected precision?
     ep = epsilon*np.sqrt(np.float64(N1*N2))
+    
+    print('brute force result:{0:0.10f} ckdtree result:{1:0.10f}'.format(n0,n1))
+    print('error:{0} expected error:{1}'.format(np.fabs(n0-n1)/n0,ep))
+    assert np.fabs(n0-n1)/n0 < 10.0 * ep, 'weights are being handeled incorrectly'
+
+
+def test_query_ball_point_wcounts():
+    #need to know the float precision of the computer
+    epsilon = np.float64(sys.float_info[8])
+
+    #create random coordinates
+    N1 = 1000
+    data_1 = np.random.random((N1,3))
+    p=np.random.random((3,))
+    
+    #build trees for points
+    tree_1 = cKDTree(data_1)
+    
+    #define random weights for test data set 2
+    weights1 = np.random.random((N1,))
+    
+    #calculate weighted sums
+    n0 = wnpairs(data_1, p, 1.0, weights1=weights1)[0]
+    n1 = tree_1.query_ball_point_wcounts(p, 1.0, weights=weights1)
+    
+    #what is the expected precision?
+    ep = epsilon*np.sqrt(np.float64(N1))
     
     print('brute force result:{0:0.10f} ckdtree result:{1:0.10f}'.format(n0,n1))
     print('error:{0} expected error:{1}'.format(np.fabs(n0-n1)/n0,ep))
