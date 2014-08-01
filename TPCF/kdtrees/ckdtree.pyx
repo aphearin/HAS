@@ -1683,6 +1683,170 @@ cdef class cKDTree:
                 result[c] = self.__query_ball_point(&xx[0], r, p, eps, period)
             return result
 
+
+    # ----------------
+    # query_ball_point_wcounts
+    # ----------------
+    cdef int __query_ball_point_traverse_no_checking_wcounts(cKDTree self,
+                                                             np.float64_t*results,
+                                                             innernode* node,
+                                                             np.float64_t*period,
+                                                             np.float64_t*weights) except -1:
+        cdef leafnode* lnode
+        cdef np.intp_t i
+
+        if node.split_dim == -1:  # leaf node
+            lnode = <leafnode*> node
+            for i in range(lnode.start_idx, lnode.end_idx):
+                #list_append(results, self.raw_indices[i])
+                results[0] += weights[self.raw_indices[i]]
+        else:
+            self.__query_ball_point_traverse_no_checking_wcounts(results, node.less, period, weights)
+            self.__query_ball_point_traverse_no_checking_wcounts(results, node.greater, period, weights)
+
+        return 0
+
+
+    @cython.cdivision(True)
+    cdef int __query_ball_point_traverse_checking_wcounts(cKDTree self,
+                                                          np.float64_t*results,
+                                                          innernode* node,
+                                                          PointRectDistanceTracker tracker,
+                                                          np.float64_t*period,
+                                                          np.float64_t*weights) except -1:
+        cdef leafnode* lnode
+        cdef np.float64_t d
+        cdef np.intp_t i
+
+        if tracker.min_distance > tracker.upper_bound * tracker.epsfac:
+            return 0
+        elif tracker.max_distance < tracker.upper_bound / tracker.epsfac:
+            self.__query_ball_point_traverse_no_checking_wcounts(results, node, period, weights)
+        elif node.split_dim == -1:  # leaf node
+            lnode = <leafnode*>node
+            # brute-force
+            for i in range(lnode.start_idx, lnode.end_idx):
+                d = _distance_p_periodic(
+                    self.raw_data + self.raw_indices[i] * self.m,
+                    tracker.pt, tracker.p, self.m, tracker.upper_bound, period)
+                if d <= tracker.upper_bound:
+                    #list_append(results, self.raw_indices[i])
+                    results[0] += weights[self.raw_indices[i]]
+        else:
+            tracker.push_less_of(node)
+            self.__query_ball_point_traverse_checking_wcounts(
+                results, node.less, tracker, period, weights)
+            tracker.pop()
+            
+            tracker.push_greater_of(node)
+            self.__query_ball_point_traverse_checking_wcounts(
+                results, node.greater, tracker, period, weights)
+            tracker.pop()
+            
+        return 0
+
+
+    cdef double __query_ball_point_wcounts(cKDTree self,
+                                         np.float64_t* x,
+                                         np.float64_t r,
+                                         np.float64_t p,
+                                         np.float64_t eps,
+                                         object period=None,
+                                         object weights=None):
+                                 
+        #process the period parameter
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        if period is None:
+            period = np.array([np.inf]*self.m)
+        else:
+            period = np.asarray(period).astype("float64")
+        cperiod = np.ascontiguousarray(period)
+        
+        #process the oweights parameter
+        cdef np.ndarray[np.float64_t, ndim=1] cweights
+        if weights is None:
+            weights = np.array([1.0]*self.n, dtype=np.float64)
+        else:
+            weights = np.asarray(weights).astype("float64")
+        cweights = np.ascontiguousarray(weights) #copy of weights
+
+        tracker = PointRectDistanceTracker()
+        tracker.init(x, Rectangle(self.mins, self.maxes),
+                     p, eps, r, period)
+        
+        cdef np.ndarray[np.float64_t, ndim=1, mode="c"] results
+        results = np.zeros((1,), dtype=np.float64)
+        self.__query_ball_point_traverse_checking_wcounts(
+            <np.float64_t*>results.data, self.tree, tracker, <np.float64_t*>cperiod.data, <np.float64_t*>cweights.data)
+        return results[0]
+
+
+    def query_ball_point_wcounts(cKDTree self, object x, np.float64_t r,
+                                 np.float64_t p=2., np.float64_t eps=0,
+                                 object period = None, object weights = None):
+        """query_ball_point_wcounts(self, x, r, p, eps)
+        
+        Find all points within distance r of point(s) x.
+
+        Parameters
+        ----------
+        x : array_like, shape tuple + (self.m,)
+            The point or points to search for neighbors of.
+        r : positive float
+            The radius of points to return.
+        p : float, optional
+            Which Minkowski p-norm to use.  Should be in the range [1, inf].
+        eps : nonnegative float, optional
+            Approximate search. Branches of the tree are not explored if their
+            nearest points are further than ``r / (1 + eps)``, and branches are
+            added in bulk if their furthest points are nearer than
+            ``r * (1 + eps)``.
+        period : array_like, dimension self.m
+            A vector indicating the periodic length along each dimension.
+
+        Returns
+        -------
+        results : list or array of lists
+            If `x` is a single point, returns a list of the indices of the
+            neighbors of `x`. If `x` is an array of points, returns an object
+            array of shape tuple containing lists of neighbors.
+
+        Notes
+        -----
+        If you have many points whose neighbors you want to find, you may save
+        substantial amounts of time by putting them in a cKDTree and using
+        query_ball_tree.
+
+        Examples
+        --------
+        >>> from scipy import spatial
+        >>> x, y = np.mgrid[0:4, 0:4]
+        >>> points = zip(x.ravel(), y.ravel())
+        >>> tree = spatial.cKDTree(points)
+        >>> tree.query_ball_point([2, 0], 1)
+        [4, 8, 9, 12]
+
+        """
+        
+        cdef np.ndarray[np.float64_t, ndim=1, mode="c"] xx
+        
+        x = np.asarray(x).astype(np.float64)
+        if x.shape[-1] != self.m:
+            raise ValueError("Searching for a %d-dimensional point in a " \
+                             "%d-dimensional KDTree" % (int(x.shape[-1]), int(self.m)))
+        if len(x.shape) == 1:
+            xx = np.ascontiguousarray(x, dtype=np.float64)
+            return self.__query_ball_point_wcounts(&xx[0], r, p, eps, period, weights)
+        else:
+            retshape = x.shape[:-1]
+            result = np.empty(retshape, dtype=np.object)
+            for c in np.ndindex(retshape):
+                xx = np.ascontiguousarray(x[c], dtype=np.float64)
+                result[c] = self.__query_ball_point_wcounts(&xx[0], r, p, eps, period, weights)
+            return result
+
+
+
     # ---------------
     # query_ball_tree
     # ---------------
@@ -2502,7 +2666,9 @@ cdef class cKDTree:
                                          np.float64_t*period,
                                          np.float64_t*sweights,
                                          np.float64_t*oweights,
-                                         Function w) except -1:
+                                         Function w,
+                                         np.float64_t*saux,
+                                         np.float64_t*oaux) except -1:
         cdef leafnode *lnode1
         cdef leafnode *lnode2
         cdef np.float64_t d
@@ -2527,7 +2693,7 @@ cdef class cKDTree:
                 for j in range(node2.start_idx, node2.end_idx): #Fuck yes.
                     for k in range(node1.start_idx, node1.end_idx):
                         #wsum += oweights[other.raw_indices[j]]*sweights[self.raw_indices[k]]
-                        wsum += w.evaluate(oweights[other.raw_indices[j]],sweights[self.raw_indices[k]])
+                        wsum += w.evaluate(sweights[self.raw_indices[k]],oweights[other.raw_indices[j]],saux[other.raw_indices[k]],oaux[self.raw_indices[j]])
                 results[old_idx[i]] += wsum
             elif tracker.min_distance <= r[old_idx[i]]:
                 idx[n_queries] = old_idx[i]
@@ -2557,19 +2723,19 @@ cdef class cKDTree:
                             for l in range(n_queries):
                                 if d <= r[idx[l]]:
                                     #results[idx[l]] += oweights[other.raw_indices[j]] * sweights[self.raw_indices[i]]
-                                    results[idx[l]] += w.evaluate(oweights[other.raw_indices[j]],sweights[self.raw_indices[i]])
+                                    results[idx[l]] += w.evaluate(sweights[self.raw_indices[i]],oweights[other.raw_indices[j]],saux[other.raw_indices[i]],oaux[self.raw_indices[j]])
                                 
                 else:  # 1 is a leaf node, 2 is inner node
                     tracker.push_less_of(2, node2)
                     self.__wcount_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1, node2.less, tracker, period, sweights, oweights, w)
+                        node1, node2.less, tracker, period, sweights, oweights, w, saux, oaux)
                     tracker.pop()
 
                     tracker.push_greater_of(2, node2)
                     self.__wcount_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1, node2.greater, tracker, period, sweights, oweights, w)
+                        node1, node2.greater, tracker, period, sweights, oweights, w, saux, oaux)
                     tracker.pop()
                 
             else:  # 1 is an inner node
@@ -2577,13 +2743,13 @@ cdef class cKDTree:
                     tracker.push_less_of(1, node1)
                     self.__wcount_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.less, node2, tracker, period, sweights, oweights, w)
+                        node1.less, node2, tracker, period, sweights, oweights, w, saux, oaux)
                     tracker.pop()
                     
                     tracker.push_greater_of(1, node1)
                     self.__wcount_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.greater, node2, tracker, period, sweights, oweights, w)
+                        node1.greater, node2, tracker, period, sweights, oweights, w, saux, oaux)
                     tracker.pop()
                     
                 else: # 1 and 2 are inner nodes
@@ -2591,13 +2757,13 @@ cdef class cKDTree:
                     tracker.push_less_of(2, node2)
                     self.__wcount_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.less, node2.less, tracker, period, sweights, oweights, w)
+                        node1.less, node2.less, tracker, period, sweights, oweights, w, saux, oaux)
                     tracker.pop()
                         
                     tracker.push_greater_of(2, node2)
                     self.__wcount_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.less, node2.greater, tracker, period, sweights, oweights, w)
+                        node1.less, node2.greater, tracker, period, sweights, oweights, w, saux, oaux)
                     tracker.pop()
                     tracker.pop()
                         
@@ -2605,13 +2771,13 @@ cdef class cKDTree:
                     tracker.push_less_of(2, node2)
                     self.__wcount_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.greater, node2.less, tracker, period, sweights, oweights, w)
+                        node1.greater, node2.less, tracker, period, sweights, oweights, w, saux, oaux)
                     tracker.pop()
                         
                     tracker.push_greater_of(2, node2)
                     self.__wcount_neighbors_traverse(
                         other, n_queries, r, results, idx,
-                        node1.greater, node2.greater, tracker, period, sweights, oweights, w)
+                        node1.greater, node2.greater, tracker, period, sweights, oweights, w, saux, oaux)
                     tracker.pop()
                     tracker.pop()
                     
@@ -2619,7 +2785,8 @@ cdef class cKDTree:
 
     @cython.boundscheck(False)
     def wcount_neighbors(cKDTree self, cKDTree other, object r, np.float64_t p=2.,
-                         object period = None, object sweights = None, object oweights = None, Function w=None):
+                         object period = None, object sweights = None,
+                         object oweights = None, Function w=None, object saux=None, object oaux=None):
         """wcount_neighbors(self, other, r, p)
 
         Weighted count of how many nearby pairs can be formed.
@@ -2647,6 +2814,7 @@ cdef class cKDTree:
         oweights : array_like, dimension other.n
             A vector indicating the weight attached to each point in other.
         w: ckdtree.Function object.  Function used in weighting.  None results in w1*w2
+            w(self weight, other weight, self aux_data, other aux_data)
 
         Returns
         -------
@@ -2688,6 +2856,22 @@ cdef class cKDTree:
         else:
             oweights = np.asarray(oweights).astype("float64")
         coweights = np.ascontiguousarray(oweights)
+        
+        #process the self aux parameter
+        cdef np.ndarray[np.float64_t, ndim=1] csaux #copy of self weights
+        if saux is None:
+            saux = np.array([1.0]*self.n, dtype=np.float64)
+        else:
+            saux = np.asarray(saux).astype("float64")
+        csaux = np.ascontiguousarray(saux)
+        
+        #process the other aux parameter
+        cdef np.ndarray[np.float64_t, ndim=1] coaux #copy of other weights
+        if oaux is None:
+            oaux = np.array([1.0]*other.n, dtype=np.float64)
+        else:
+            oweights = np.asarray(oaux).astype("float64")
+        coaux = np.ascontiguousarray(oaux)
 
         # Make sure trees are compatible
         if self.m != other.m:
@@ -2723,7 +2907,10 @@ cdef class cKDTree:
                                         self.tree, other.tree,
                                         tracker,  <np.float64_t*>cperiod.data,
                                         <np.float64_t*>csweights.data,
-                                        <np.float64_t*>coweights.data, w)
+                                        <np.float64_t*>coweights.data,
+                                        w, 
+                                        <np.float64_t*>csaux.data,
+                                        <np.float64_t*>coaux.data)
 
         if np.shape(r) == ():
             return results[0]
@@ -2876,10 +3063,10 @@ cdef class cKDTree:
 
 
 cdef class Function:
-    cpdef double evaluate(self, double x, double y) except *:
+    cpdef double evaluate(self, double x, double y, double a, double b) except *:
         return 0
 
 cdef class fmultiply(Function):
-    cpdef double evaluate(self, double x, double y) except *:
+    cpdef double evaluate(self, double x, double y, double a, double b) except *:
         return x * y
         
