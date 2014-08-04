@@ -133,7 +133,7 @@ def proj_cross_npairs_serial(data_1, data_2, r_bins, cosmo, weights_1=None, weig
     N1 = len(data_1)
     prev_pairs = np.zeros((len(data_1),))
     for i in range(0,len(theta_bins)):
-        #print(i, np.degrees(theta_bins[i]))
+        print(i, np.degrees(theta_bins[i]))
         #calculate bins for angular separations
         pairs = np.array(KDT_1.query_ball_tree_wcounts(KDT_2, c_bins[i]))
         #convert angular separation into projected physical separation
