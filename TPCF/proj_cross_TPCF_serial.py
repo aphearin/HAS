@@ -121,6 +121,7 @@ def proj_cross_npairs_serial(data_1, data_2, r_bins, cosmo, weights_1=None, weig
     
     #define angular bins given r_proj bins and redshift range
     N_sample = int(np.ceil(np.max(X)/np.min(X)))
+    print(N_sample, np.max(X), np.min(X))
     theta_bins = _proj_r_to_angular_bins(r_bins, z, N_sample, cosmo)
     print(len(theta_bins),np.min(theta_bins),np.max(theta_bins))
     
