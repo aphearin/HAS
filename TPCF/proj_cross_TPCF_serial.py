@@ -122,6 +122,7 @@ def proj_cross_npairs_serial(data_1, data_2, r_bins, cosmo, weights_1=None, weig
     #define angular bins given r_proj bins and redshift range
     N_sample = int(np.ceil(np.max(X)/np.min(X)))
     theta_bins = _proj_r_to_angular_bins(r_bins, z, N_sample, cosmo)
+    print(len(theta_bins),np.min(theta_bins),np.max(theta_bins))
     
     #convert angular bins to cartesian distances
     c_bins = _chord_to_cartesian(theta_bins)
@@ -131,13 +132,13 @@ def proj_cross_npairs_serial(data_1, data_2, r_bins, cosmo, weights_1=None, weig
     N1 = len(data_1)
     prev_pairs = np.zeros((len(data_1),))
     for i in range(0,len(theta_bins)):
-        print(i, np.degrees(theta_bins[i]))
+        #print(i, np.degrees(theta_bins[i]))
         #calculate bins for angular separations
         pairs = np.array(KDT_1.query_ball_tree_wcounts(KDT_2, c_bins[i]))
         #convert angular separation into projected physical separation
         r_proj = X/(1.0+z)*theta_bins[i]
         #print(len(np.where(r_proj<np.max(r_bins))[0]))
-        print(pairs)
+        #print(pairs)
         #calculate which r_proj bin each theta_bin falls in
         k_ind = np.searchsorted(r_bins,r_proj)
         for j in range(0,N1):
