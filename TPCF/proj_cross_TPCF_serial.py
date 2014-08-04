@@ -102,7 +102,7 @@ def proj_cross_npairs_serial(data_1, data_2, r_bins, cosmo, weights_1=None, weig
     '''
     from astropy.cosmology.funcs import comoving_distance
     import numpy as np
-    from kdtrees.ckdtree import cKDTree
+    from HAS.TPCF.kdtrees.ckdtree import cKDTree
     
     #create tree structures for angular pair calculation
     xyz_1 = np.empty((len(data_1),3))
