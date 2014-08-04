@@ -2965,6 +2965,280 @@ cdef class cKDTree:
             return results
 
 
+    # ---------------
+    # wcount_neighbors_custom
+    # ---------------
+    cdef int __wcount_neighbors_custom_traverse(cKDTree self,
+                                         cKDTree other,
+                                         np.intp_t n_queries,
+                                         np.float64_t* r,
+                                         np.float64_t[:,:] results,
+                                         np.intp_t * idx,
+                                         innernode* node1,
+                                         innernode* node2,
+                                         RectRectDistanceTracker tracker,
+                                         np.float64_t*period,
+                                         np.float64_t*sweights,
+                                         np.float64_t*oweights,
+                                         Function w,
+                                         np.float64_t*saux,
+                                         np.float64_t*oaux) except -1:
+        cdef leafnode *lnode1
+        cdef leafnode *lnode2
+        cdef np.float64_t d
+        cdef np.intp_t *old_idx
+        cdef np.intp_t old_n_queries, l, i, j
+        cdef np.float64_t wsum
+
+        # Speed through pairs of nodes all of whose children are close
+        # and see if any work remains to be done
+        old_idx = idx
+        cdef np.ndarray[np.intp_t, ndim=1] inner_idx
+        inner_idx = np.empty((n_queries,), dtype=np.intp)
+        idx = &inner_idx[0]
+
+        old_n_queries = n_queries
+        n_queries = 0
+        for i in range(old_n_queries):
+            if tracker.max_distance < r[old_idx[i]]:
+                #results[old_idx[i]] += node1.children * node2.children
+                #need to run through all children and sum weights
+                for k in range(node1.start_idx, node1.end_idx):
+                    wsum = 0.000000000000000
+                    for j in range(node2.start_idx, node2.end_idx):
+                        #wsum += oweights[other.raw_indices[j]]*sweights[self.raw_indices[k]]
+                        wsum += w.evaluate(sweights[self.raw_indices[k]],
+                                                    oweights[other.raw_indices[j]],
+                                                    saux[self.raw_indices[k]],
+                                                    oaux[other.raw_indices[j]])
+                    results[self.raw_indices[k],old_idx[i]] += wsum
+            elif tracker.min_distance <= r[old_idx[i]]:
+                idx[n_queries] = old_idx[i]
+                n_queries += 1
+
+        if n_queries > 0:
+            # OK, need to probe a bit deeper
+            if node1.split_dim == -1:  # 1 is leaf node
+                lnode1 = <leafnode*>node1
+                if node2.split_dim == -1:  # 1 & 2 are leaves
+                    lnode2 = <leafnode*>node2
+                    
+                    # brute-force
+                    for i in range(lnode1.start_idx, lnode1.end_idx):
+                        for j in range(lnode2.start_idx, lnode2.end_idx):
+                            #d = _distance_p(
+                            #    self.raw_data + self.raw_indices[i] * self.m,
+                            #    other.raw_data + other.raw_indices[j] * other.m,
+                            #    tracker.p, self.m, tracker.max_distance)
+                            d = _distance_p_periodic(
+                                self.raw_data + self.raw_indices[i] * self.m,
+                                other.raw_data + other.raw_indices[j] * other.m,
+                                tracker.p, self.m, tracker.max_distance, period)
+                            # I think it's usually cheaper to test d against all r's
+                            # than to generate a distance array, sort it, then
+                            # search for all r's via binary search
+                            for l in range(n_queries):
+                                if d <= r[idx[l]]:
+                                    #results[idx[l]] += oweights[other.raw_indices[j]] * sweights[self.raw_indices[i]]
+                                    results[self.raw_indices[i],idx[l]] += w.evaluate(sweights[self.raw_indices[i]],
+                                                                  oweights[other.raw_indices[j]],
+                                                                  saux[self.raw_indices[i]],
+                                                                  oaux[other.raw_indices[j]])
+                                
+                else:  # 1 is a leaf node, 2 is inner node
+                    tracker.push_less_of(2, node2)
+                    self.__wcount_neighbors_custom_traverse(
+                        other, n_queries, r, results, idx,
+                        node1, node2.less, tracker, period, sweights, oweights, w, saux, oaux)
+                    tracker.pop()
+
+                    tracker.push_greater_of(2, node2)
+                    self.__wcount_neighbors_custom_traverse(
+                        other, n_queries, r, results, idx,
+                        node1, node2.greater, tracker, period, sweights, oweights, w, saux, oaux)
+                    tracker.pop()
+                
+            else:  # 1 is an inner node
+                if node2.split_dim == -1:  # 1 is an inner node, 2 is a leaf node
+                    tracker.push_less_of(1, node1)
+                    self.__wcount_neighbors_custom_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.less, node2, tracker, period, sweights, oweights, w, saux, oaux)
+                    tracker.pop()
+                    
+                    tracker.push_greater_of(1, node1)
+                    self.__wcount_neighbors_custom_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.greater, node2, tracker, period, sweights, oweights, w, saux, oaux)
+                    tracker.pop()
+                    
+                else: # 1 and 2 are inner nodes
+                    tracker.push_less_of(1, node1)
+                    tracker.push_less_of(2, node2)
+                    self.__wcount_neighbors_custom_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.less, node2.less, tracker, period, sweights, oweights, w, saux, oaux)
+                    tracker.pop()
+                        
+                    tracker.push_greater_of(2, node2)
+                    self.__wcount_neighbors_custom_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.less, node2.greater, tracker, period, sweights, oweights, w, saux, oaux)
+                    tracker.pop()
+                    tracker.pop()
+                        
+                    tracker.push_greater_of(1, node1)
+                    tracker.push_less_of(2, node2)
+                    self.__wcount_neighbors_custom_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.greater, node2.less, tracker, period, sweights, oweights, w, saux, oaux)
+                    tracker.pop()
+                        
+                    tracker.push_greater_of(2, node2)
+                    self.__wcount_neighbors_custom_traverse(
+                        other, n_queries, r, results, idx,
+                        node1.greater, node2.greater, tracker, period, sweights, oweights, w, saux, oaux)
+                    tracker.pop()
+                    tracker.pop()
+                    
+        return 0
+
+    @cython.boundscheck(False)
+    def wcount_neighbors_custom(cKDTree self, cKDTree other, object r, np.float64_t p=2.,
+                         object period = None, object sweights = None,
+                         object oweights = None, Function w=None, object saux=None, object oaux=None):
+        """wcount_neighbors(self, other, r, p)
+
+        Weighted count of how many nearby pairs can be formed.
+
+        Count the number of pairs (x1,x2) can be formed, with x1 drawn
+        from self and x2 drawn from `other`, and where
+        ``distance(x1, x2, p) <= r``.
+        This is the "two-point correlation" described in Gray and Moore 2000,
+        "N-body problems in statistical learning", and the code here is based
+        on their algorithm.
+
+        Parameters
+        ----------
+        other : KDTree instance
+            The other tree to draw points from.
+        r : float or one-dimensional array of floats
+            The radius to produce a count for. Multiple radii are searched with
+            a single tree traversal.
+        p : float, 1<=p<=infinity
+            Which Minkowski p-norm to use
+        period : array_like, dimension self.m
+            A vector indicating the periodic length along each dimension.
+        sweights : array_like, dimension self.n
+            A vector indicating the weight attached to each point in self.
+        oweights : array_like, dimension other.n
+            A vector indicating the weight attached to each point in other.
+        w: ckdtree.Function object.  Function used in weighting.  None results in w1*w2
+            w(self weight, other weight, self aux_data, other aux_data)
+
+        Returns
+        -------
+        result : float or 1-D array of floats
+            The weighted number of pairs. Note that this is internally stored in a numpy float,
+            and so may overflow if very large (2e9).
+
+        """
+        
+        #process count function
+        if w is None:
+            w = fmultiply()
+        
+        #process the period parameter
+        cdef np.ndarray[np.float64_t, ndim=1] cperiod
+        if period is None:
+            period = np.array([np.inf]*self.m)
+        else:
+            period = np.asarray(period).astype("float64")
+        cperiod = np.ascontiguousarray(period)
+        
+        cdef np.intp_t n_queries, i
+        cdef np.ndarray[np.float64_t, ndim=1, mode="c"] real_r
+        cdef np.ndarray[np.intp_t, ndim=1, mode="c"] idx
+        #cdef np.ndarray[np.float64_t, ndim=2, mode="c"] results
+        
+        #process the self weights parameter
+        cdef np.ndarray[np.float64_t, ndim=1] csweights #copy of self weights
+        if sweights is None:
+            sweights = np.array([1.0]*self.n, dtype=np.float64)
+        else:
+            sweights = np.asarray(sweights).astype("float64")
+        csweights = np.ascontiguousarray(sweights)
+        
+        #process the other weights parameter
+        cdef np.ndarray[np.float64_t, ndim=1] coweights #copy of other weights
+        if oweights is None:
+            oweights = np.array([1.0]*other.n, dtype=np.float64)
+        else:
+            oweights = np.asarray(oweights).astype("float64")
+        coweights = np.ascontiguousarray(oweights)
+        
+        #process the self aux parameter
+        cdef np.ndarray[np.float64_t, ndim=1] csaux #copy of self weights
+        if saux is None:
+            saux = np.array([1.0]*self.n, dtype=np.float64)
+        else:
+            saux = np.asarray(saux).astype("float64")
+        csaux = np.ascontiguousarray(saux)
+        
+        #process the other aux parameter
+        cdef np.ndarray[np.float64_t, ndim=1] coaux #copy of other weights
+        if oaux is None:
+            oaux = np.array([1.0]*other.n, dtype=np.float64)
+        else:
+            oweights = np.asarray(oaux).astype("float64")
+        coaux = np.ascontiguousarray(oaux)
+
+        # Make sure trees are compatible
+        if self.m != other.m:
+            raise ValueError("Trees passed to count_neighbors have different dimensionality")
+
+        # Make a copy of r array to ensure it's contiguous and to modify it below
+        if np.shape(r) == ():
+            real_r = np.array([r], dtype=np.float64)
+            n_queries = 1
+        elif len(np.shape(r))==1:
+            real_r = np.array(r, dtype=np.float64)
+            n_queries = r.shape[0]
+        else:
+            raise ValueError("r must be either a single value or a one-dimensional array of values")
+
+        # Internally, we represent all distances as distance ** p
+        if p != infinity:
+            for i in range(n_queries):
+                if real_r[i] != infinity:
+                    real_r[i] = real_r[i] ** p
+
+        # Track node-to-node min/max distances
+        tracker = RectRectDistanceTracker(
+            Rectangle(self.mins, self.maxes),
+            Rectangle(other.mins, other.maxes),
+            p, 0.0, 0.0, period)
+        
+        # Go!
+        results = np.zeros(self.n*n_queries, dtype=np.float64).reshape((self.n,n_queries))
+        #results = np.zeros((self.n,n_queries), dtype=np.float64)
+        idx = np.arange(n_queries, dtype=np.intp)
+        self.__wcount_neighbors_custom_traverse(other, n_queries,
+                                        &real_r[0], results, &idx[0],
+                                        self.tree, other.tree,
+                                        tracker,  <np.float64_t*>cperiod.data,
+                                        <np.float64_t*>csweights.data,
+                                        <np.float64_t*>coweights.data,
+                                        w, 
+                                        <np.float64_t*>csaux.data,
+                                        <np.float64_t*>coaux.data)
+
+        if np.shape(r) == ():
+            return results[:,0]
+        elif len(np.shape(r))==1:
+            return results
+
+
     # ----------------------
     # sparse_distance_matrix
     # ----------------------
