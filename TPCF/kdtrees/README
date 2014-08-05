@@ -12,6 +12,7 @@ The kdtree also has some functions wich support weighting of points for counting
 Current available functions are:
     query -- accepts PBCs
     query_ball_point -- accepts PBCs
+    query_ball_point_wcounts -- like query_ball_point but accepts weights and returns weighted counts
     query_ball_tree -- accepts PBCs
     query_ball_tree_wcounts --  accepts PBCs, and weights on other
     query_pairs -- accepts PBCs
@@ -19,8 +20,9 @@ Current available functions are:
     wcount_neighbors -- like count_neighbors, but accepts weights for other and self and a
         function, w, defining how to handle weighted counts of the form w(w1,w2): return 
         double.  The default is return w1*w2.
-    sparse_distance_matrix -- does not have support for PBCs because I can't think of a 
-        use for it currently.
+    wcount_neighbors_custom -- like wcount_beighbors, but returns the weighted counts for 
+        each point in self
+    sparse_distance_matrix -- has been removed!
     
 Note that a Minkowski p-norm of infinity is not supported currently. This wouldn't be too
 hard to add, but I am lazy. In addition, I have only really tested and have a current use 
