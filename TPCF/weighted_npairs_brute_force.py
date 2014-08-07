@@ -65,7 +65,7 @@ def wnpairs(data1, data2, r, period=None, weights1=None, weights2=None):
     data2 = np.asarray(data2)
     if data2.ndim ==1: data2 = np.array([data2])
     r = np.asarray(r)
-    if r.size ==1: r = np.array([r])
+    if r.size == 1: r = np.array([r])
     
     #Check to make sure both data sets have the same dimension. Otherwise, throw an error!
     if np.shape(data1)[-1]!=np.shape(data2)[-1]:
@@ -114,7 +114,7 @@ def wnpairs(data1, data2, r, period=None, weights1=None, weights2=None):
             print("r=", r[i], "  min(period)/2=",np.min(period)/2)
         for j in range(N1):
             n[i] += np.sum(np.extract(dd[j,:]<=r[i],weights2))*weights1[j]
-
+    
     return n
 
 

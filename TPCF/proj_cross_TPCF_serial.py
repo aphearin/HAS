@@ -39,10 +39,12 @@ def main():
     print('len(data_2):', N2)
     print('len(ran_2) :', N3)
     
+    '''
     plt.figure()
     plt.plot(data_2[:,0], data_2[:,1], '.', color='black', ms=2)
     plt.plot(data_1[:,0], data_1[:,1], 'x', color='red', ms=4)
     plt.show(block=False)
+    '''
     
     #define radial bins
     r_bins = np.arange(-2,1,0.2) #Mpc
@@ -103,6 +105,7 @@ def proj_cross_npairs_serial(data_1, data_2, r_bins, cosmo, weights_1=None, weig
     from astropy.cosmology.funcs import comoving_distance
     import numpy as np
     from HAS.TPCF.kdtrees.ckdtree import cKDTree
+    import time
     
     #create tree structures for angular pair calculation
     xyz_1 = np.empty((len(data_1),3))
@@ -121,31 +124,26 @@ def proj_cross_npairs_serial(data_1, data_2, r_bins, cosmo, weights_1=None, weig
     
     #define angular bins given r_proj bins and redshift range
     N_sample = int(np.ceil(np.max(X)/np.min(X)))
-    print(N_sample, np.max(X), np.min(X))
+    #print(N_sample, np.max(X), np.min(X))
     theta_bins = _proj_r_to_angular_bins(r_bins, z, N_sample, cosmo)
-    print(len(theta_bins),np.min(theta_bins),np.max(theta_bins))
+    #print(len(theta_bins),np.min(theta_bins),np.max(theta_bins))
     
     #convert angular bins to cartesian distances
     c_bins = _chord_to_cartesian(theta_bins)
     
-    #run a tree query for each theta bin
+    start = time.time()
+    result = KDT_1.wcount_neighbors_custom(KDT_2, c_bins)
+    result = np.diff(result, axis=1)
+    
     pp = np.zeros(len(r_bins)) #pair count storage array
     N1 = len(data_1)
-    prev_pairs = np.zeros((len(data_1),))
-    for i in range(0,len(theta_bins)):
-        print(i, np.degrees(theta_bins[i]))
-        #calculate bins for angular separations
-        pairs = np.array(KDT_1.query_ball_tree_wcounts(KDT_2, c_bins[i]))
-        #convert angular separation into projected physical separation
-        r_proj = X/(1.0+z)*theta_bins[i]
-        #print(len(np.where(r_proj<np.max(r_bins))[0]))
-        #print(pairs)
-        #calculate which r_proj bin each theta_bin falls in
+    for j in range(0,N1):
+        r_proj = X[j]/(1.0+z[j])*theta_bins
         k_ind = np.searchsorted(r_bins,r_proj)
-        for j in range(0,N1):
-            if k_ind[j]<len(pp):
-                pp[k_ind[j]] += pairs[j] - prev_pairs[j]
-        prev_pairs = pairs
+        for k in range(0,len(theta_bins)-1):
+            if k_ind[k]<len(pp):
+                pp[k_ind[k]] += result[j,k]
+    print(time.time()-start)
 
     return pp
 

@@ -311,6 +311,44 @@ def test_query_ball_point_wcounts():
     assert np.fabs(n0-n1)/n0 < 10.0 * ep, 'weights are being handeled incorrectly'
     
     
+def test_wcount_neighbors_custom_double_weights_functionality():
+    #need to know the float precision of the computer
+    epsilon = np.float64(sys.float_info[8])
+    
+    #user defined function
+    from ..kdtrees.ckdtree import Function
+    class MyFunction(Function):
+        def evaluate(self, x, y, a, b):
+            return x*y
 
+    #create random coordinates
+    N1 = 1000
+    N2 = 1000
+    data_1 = np.random.random((N1,3))
+    data_2 = np.random.random((N2,3))
+    
+    r = np.arange(0.1,1,0.1)
+    
+    #build trees for points
+    tree_1 = cKDTree(data_1)
+    tree_2 = cKDTree(data_2)
+    
+    #define random weights for test data set 2
+    weights1 = np.random.random((N1,))
+    weights2 = np.random.random((N2,))
+    
+    #calculate weighted sums
+    n0 = wnpairs(data_1, data_2, r, weights1=weights1, weights2=weights2)
+    n1 = tree_1.wcount_neighbors_custom(tree_2,r, sweights=weights1, oweights=weights2, w=MyFunction())
+    
+    #what is the expected precision?
+    ep = epsilon*np.sqrt(np.float64(N1*N2))
+    
+    #sum to compare to brute force method.
+    n1 = np.sum(n1, axis=0)
+    
+    print(n1)
+    print(n0)
+    assert np.all(np.fabs(n0-n1)/n0 < 10.0 * ep), 'weights are being handeled incorrectly'
 
 

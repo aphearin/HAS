@@ -20,6 +20,7 @@ def main():
     '''
     import sys
     import os
+    import time
     
     comm = MPI.COMM_WORLD
     rank = comm.rank
@@ -65,12 +66,16 @@ def main():
     bins=np.logspace(-1,1.5,10)
     bin_centers = (bins[:-1]+bins[1:])/2.0
     
+    start = time.time()
     DD,RR,DR,bins = wnpairs(data_1, data_2, bins, period=None, weights_1=weights_1, weights_2=weights_2, comm=comm)
     
     if rank==0:
+        print("time (s): {0}".format(time.time()-start))
+        print("N1: {0} x N2: {1}   with N_bins: {2}".format(len(data_1),len(data_2),len(bins)))
         data = Table([bins[1:], DD, RR, DR], names=['r', 'DD', 'RR', 'DR'])
         ascii.write(data, savename)
-    
+
+
 def npairs(data_1, data_2, bins, period=None, comm=None):
     '''
     Count pairs with separations given by bins.
@@ -132,11 +137,11 @@ def npairs(data_1, data_2, bins, period=None, comm=None):
     
     #creating trees seems very cheap, so I don't worry about this too much.
     #create full trees
-    KDT_1 = cKDTree(data_1)
-    KDT_2 = cKDTree(data_2)
+    KDT_1 = cKDTree(data_1, leafsize=10)
+    KDT_2 = cKDTree(data_2, leafsize=10)
     #create chunked up trees
-    KDT_1_small = cKDTree(data_1[inds1])
-    KDT_2_small = cKDTree(data_2[inds2])
+    KDT_1_small = cKDTree(data_1[inds1], leafsize=10)
+    KDT_2_small = cKDTree(data_2[inds2], leafsize=10)
     
     #count!
     counts_11 = KDT_1_small.count_neighbors(KDT_1, bins)
@@ -253,11 +258,11 @@ def wnpairs(data_1, data_2, bins, period=None , weights_1=None, weights_2=None, 
     
     #creating trees seems very cheap, so I don't worry about this too much.
     #create full trees
-    KDT_1 = cKDTree(data_1)
-    KDT_2 = cKDTree(data_2)
+    KDT_1 = cKDTree(data_1, leafsize=1)
+    KDT_2 = cKDTree(data_2, leafsize=1)
     #create chunked up trees
-    KDT_1_small = cKDTree(data_1[inds1])
-    KDT_2_small = cKDTree(data_2[inds2])
+    KDT_1_small = cKDTree(data_1[inds1], leafsize=1)
+    KDT_2_small = cKDTree(data_2[inds2], leafsize=1)
     
     #count!
     counts_11 = KDT_1_small.wcount_neighbors(KDT_1, bins, sweights = weights_1[inds1], oweights = weights_1, w=wf)
